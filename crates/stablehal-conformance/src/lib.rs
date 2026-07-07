@@ -176,7 +176,7 @@ pub static STANDARD_SUITE: &[Case] = &[
     Case {
         id: "WRITE-SINGLE-READBACK",
         description: "FC06 echoes and persists the written value",
-        probes: &["RTU-RESP-FC"],
+        probes: &["RTU-RESP-FC", "RTU-MASTER-WAIT"],
         judge_master_dir: true,
         steps: &[
             Step {
@@ -211,7 +211,7 @@ pub static STANDARD_SUITE: &[Case] = &[
     Case {
         id: "WRITE-MULTI-READBACK",
         description: "FC16 echoes quantity and persists all values",
-        probes: &["RTU-PDU-FORM"],
+        probes: &["RTU-PDU-FORM", "RTU-MASTER-WAIT"],
         judge_master_dir: true,
         steps: &[
             Step {

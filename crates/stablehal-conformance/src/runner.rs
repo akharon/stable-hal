@@ -401,6 +401,20 @@ impl Report {
             .collect::<Vec<_>>()
             .join("\n")
     }
+    /// Clause ids probed by the executed cases (union of case.probes).
+    /// WP4 §4.1: every clause id in the contract (except documented
+    /// structural-only ones) must appear in some case's probes.
+    pub fn probed_clauses(&self, suite: &[Case]) -> Vec<&'static str> {
+        let mut ids: Vec<&'static str> = Vec::new();
+        for case in suite {
+            for p in case.probes {
+                if !ids.contains(p) {
+                    ids.push(p);
+                }
+            }
+        }
+        ids
+    }
 }
 
 fn build_stimulus(timing: &RtuTiming, stim: &Stimulus) -> StepPlan {

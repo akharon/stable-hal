@@ -48,6 +48,21 @@ impl SplitMix64 {
     pub fn pick(&mut self, bound: TimeBound) -> Nanos {
         Nanos(self.range_inclusive(bound.min.as_nanos(), bound.max.as_nanos()))
     }
+
+    /// Boundary-biased envelope sampling: 25% exact min, 25% exact max,
+    /// 50% uniform interior. Draw order is fixed so replay determinism holds.
+    /// WP4 §4.2 — use behind `SimConfig::boundary_bias` flag.
+    pub fn pick_biased(&mut self, bound: TimeBound) -> Nanos {
+        // Branch selector: 0..3
+        match self.range_inclusive(0, 3) {
+            0 => bound.min,
+            1 => bound.max,
+            _ => Nanos(self.range_inclusive(
+                bound.min.as_nanos().saturating_add(1),
+                bound.max.as_nanos().saturating_sub(1),
+            )),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -74,5 +89,28 @@ mod tests {
         for _ in 0..10_000 {
             assert!(b.contains(r.pick(b)));
         }
+    }
+
+    #[test]
+    fn pick_biased_hits_boundaries_and_interior() {
+        let mut r = SplitMix64::new(42);
+        let b = TimeBound::new(Nanos(100_000), Nanos(200_000));
+        let mut saw_min = false;
+        let mut saw_max = false;
+        let mut saw_interior = false;
+        for _ in 0..10_000 {
+            let v = r.pick_biased(b);
+            assert!(b.contains(v), "biased pick outside envelope");
+            if v == b.min {
+                saw_min = true;
+            } else if v == b.max {
+                saw_max = true;
+            } else {
+                saw_interior = true;
+            }
+        }
+        assert!(saw_min, "never picked the min boundary");
+        assert!(saw_max, "never picked the max boundary");
+        assert!(saw_interior, "never picked an interior value");
     }
 }

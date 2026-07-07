@@ -12,12 +12,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use stablehal_conformance::runner::{
-    rtu_observer, run_suite, OwnedRequest, ScriptOutcome, ScriptedMaster, SlaveActor, SuiteConfig,
-    Txn, Verify,
+    rtu_observer, run_suite, OwnedRequest, Report, ScriptOutcome, ScriptedMaster, SlaveActor,
+    SuiteConfig, Txn, Verify,
 };
 use stablehal_conformance::{pattern, DUT_UNIT, STANDARD_SUITE};
-use stablehal_contract::{Nanos, SplitMix64};
-use stablehal_modbus::{MasterConfig, RegisterBank, RtuTiming, SlaveBugs, SlaveConfig};
+use stablehal_contract::{Contract, Nanos, SplitMix64};
+use stablehal_modbus::{
+    contract::RtuContract, MasterConfig, RegisterBank, RtuTiming, SlaveBugs, SlaveConfig,
+};
 use stablehal_sim::{Actor, Sim, SimConfig};
 use stablehal_uart::UartConfig;
 
@@ -290,4 +292,33 @@ fn seed_replay_is_exact_and_seeds_differ() {
     assert_eq!(a.hash, b.hash, "same seed must replay byte-for-byte");
     let c = dst_run(12, 2_000, false);
     assert_ne!(a.hash, c.hash, "different seeds should explore differently");
+}
+
+// ---------------------------------------------------------------------------
+// WP4 §4.1: clause coverage accounting
+// ---------------------------------------------------------------------------
+
+/// Structural-only clause ids that are enforced implicitly by the simulator
+/// wire (line contract) and cannot be probed by conformance cases.
+const STRUCTURAL_ONLY: &[&str] = &["RTU-CHAR-OVERLAP"];
+
+#[test]
+fn every_clause_is_probed_by_the_suite() {
+    let contract = RtuContract::new(timing());
+    let all_clauses = contract.clauses();
+    let report = Report::default();
+    let probed = report.probed_clauses(STANDARD_SUITE);
+
+    for clause in all_clauses {
+        if STRUCTURAL_ONLY.contains(&clause.id) {
+            continue;
+        }
+        assert!(
+            probed.contains(&clause.id),
+            "clause {} ({}) is not probed by any conformance case; \
+             either add it to a case's `probes` or document it as structural-only",
+            clause.id,
+            clause.text
+        );
+    }
 }

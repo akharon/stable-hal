@@ -40,6 +40,10 @@ pub struct SimConfig {
     pub latency: TimeBound,
     /// Per-character corruption probability, in parts per million.
     pub corrupt_ppm: u32,
+    /// Use boundary-biased envelope sampling (25% min, 25% max, 50% interior)
+    /// instead of uniform. Default `false` — flipping changes all trace hashes.
+    /// WP4 §4.2.
+    pub boundary_bias: bool,
 }
 
 impl SimConfig {
@@ -49,6 +53,7 @@ impl SimConfig {
             uart,
             latency: TimeBound::new(Nanos::from_micros(1), Nanos::from_micros(50)),
             corrupt_ppm: 0,
+            boundary_bias: false,
         }
     }
 }
@@ -343,7 +348,11 @@ impl Sim {
                     // Environment nondeterminism, drawn from the seeded
                     // stream *in event order*: propagation latency, then
                     // (optionally) corruption.
-                    let latency = self.prng.pick(self.config.latency);
+                    let latency = if self.config.boundary_bias {
+                        self.prng.pick_biased(self.config.latency)
+                    } else {
+                        self.prng.pick(self.config.latency)
+                    };
                     let corrupt = self.config.corrupt_ppm > 0
                         && self
                             .prng

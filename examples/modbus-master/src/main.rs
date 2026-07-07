@@ -87,7 +87,7 @@ struct RunResult {
     events: usize,
 }
 
-fn run_one(seed: u64, corrupt_ppm: u32) -> RunResult {
+fn run_one(seed: u64, corrupt_ppm: u32, bias: bool) -> RunResult {
     let timing = timing();
     let (master, outcome) =
         ScriptedMaster::new(MasterConfig::new(timing), build_script(seed), pattern);
@@ -109,6 +109,7 @@ fn run_one(seed: u64, corrupt_ppm: u32) -> RunResult {
 
     let mut cfg = SimConfig::new(seed, UART);
     cfg.corrupt_ppm = corrupt_ppm;
+    cfg.boundary_bias = bias;
     let mut sim = Sim::new(cfg, Box::new(master), Box::new(slave));
     sim.add_observer(rtu_observer(timing, true, true));
 
@@ -136,10 +137,11 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let seeds = arg_value(&args, "--seeds").unwrap_or(1000);
     let corrupt_ppm = arg_value(&args, "--corrupt").unwrap_or(2000) as u32;
+    let bias = args.contains(&"--bias".to_string());
 
     if let Some(seed) = arg_value(&args, "--replay-check") {
-        let a = run_one(seed, corrupt_ppm);
-        let b = run_one(seed, corrupt_ppm);
+        let a = run_one(seed, corrupt_ppm, bias);
+        let b = run_one(seed, corrupt_ppm, bias);
         println!("seed {seed}: hash {:016x} vs {:016x}", a.hash, b.hash);
         if a.hash == b.hash {
             println!("replay EXACT ✓");
@@ -149,9 +151,10 @@ fn main() {
         std::process::exit(1);
     }
 
+    let label = if bias { "boundary-biased" } else { "uniform" };
     println!("StableHAL DST sweep — MODBUS RTU master over contract-simulated 9600-8E1 wire");
     println!(
-        "seeds: {seeds}, corruption: {corrupt_ppm} ppm/char, latency envelope: {}",
+        "seeds: {seeds}, corruption: {corrupt_ppm} ppm/char, latency envelope: {} ({label})",
         SimConfig::new(0, UART).latency
     );
 
@@ -163,7 +166,7 @@ fn main() {
     let mut events = 0usize;
 
     for seed in 0..seeds {
-        let r = run_one(seed, corrupt_ppm);
+        let r = run_one(seed, corrupt_ppm, bias);
         hashes.insert(r.hash);
         events += r.events;
         if let Some(v) = &r.violation {
