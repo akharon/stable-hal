@@ -5,9 +5,9 @@
 //! This is the same suite that later runs on-target against real hardware —
 //! the `no_std` case definitions and oracle are identical.
 
-use stablehal_contract::Nanos;
 use stablehal_conformance::runner::{run_suite, SlaveActor, SuiteConfig};
 use stablehal_conformance::{pattern, DUT_UNIT, STANDARD_SUITE};
+use stablehal_contract::Nanos;
 use stablehal_modbus::{RegisterBank, RtuTiming, SlaveBugs, SlaveConfig};
 use stablehal_sim::Actor;
 use stablehal_uart::UartConfig;
@@ -92,8 +92,8 @@ fn main() {
         DUT_UNIT
     );
     println!(
-        "{:<28} {:>7}  {}",
-        "device under test", "passed", "first breached clause / detail"
+        "{:<28} {:>7}  first breached clause / detail",
+        "device under test", "passed"
     );
     println!("{}", "-".repeat(100));
 
@@ -117,7 +117,10 @@ fn main() {
         );
         let is_reference = i == 0;
         if is_reference && !report.all_pass() {
-            eprintln!("  ✗ reference slave must pass everything:\n{}", report.failure_text());
+            eprintln!(
+                "  ✗ reference slave must pass everything:\n{}",
+                report.failure_text()
+            );
             ok = false;
         }
         if !is_reference && report.all_pass() {

@@ -211,13 +211,25 @@ fn be16(hi: u8, lo: u8) -> u16 {
 /// A request as seen by a slave, after CRC and length validation.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ParsedRequest<'a> {
-    ReadHolding { addr: u16, count: u16 },
-    WriteSingle { addr: u16, value: u16 },
+    ReadHolding {
+        addr: u16,
+        count: u16,
+    },
+    WriteSingle {
+        addr: u16,
+        value: u16,
+    },
     /// `data` holds `count` big-endian u16 values.
-    WriteMultiple { addr: u16, count: u16, data: &'a [u8] },
+    WriteMultiple {
+        addr: u16,
+        count: u16,
+        data: &'a [u8],
+    },
     /// Structurally sound frame with a function code outside the subset —
     /// the slave must answer exception 01. AP §7.
-    UnknownFunction { fc: u8 },
+    UnknownFunction {
+        fc: u8,
+    },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -281,10 +293,20 @@ pub fn parse_request(frame: &[u8]) -> Result<(u8, ParsedRequest<'_>), FrameFault
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ParsedResponse<'a> {
     /// FC 03: `data` holds the register bytes (big-endian pairs).
-    ReadHolding { data: &'a [u8] },
-    WriteSingle { addr: u16, value: u16 },
-    WriteMultiple { addr: u16, count: u16 },
-    Exception { code: ExceptionCode },
+    ReadHolding {
+        data: &'a [u8],
+    },
+    WriteSingle {
+        addr: u16,
+        value: u16,
+    },
+    WriteMultiple {
+        addr: u16,
+        count: u16,
+    },
+    Exception {
+        code: ExceptionCode,
+    },
 }
 
 impl ParsedResponse<'_> {
@@ -338,7 +360,7 @@ pub fn parse_response<'a>(
     }
     match fc {
         FC_READ_HOLDING => {
-            if body.is_empty() || body.len() != 1 + body[0] as usize || body[0] % 2 != 0 {
+            if body.is_empty() || body.len() != 1 + body[0] as usize || !body[0].is_multiple_of(2) {
                 return Err(FrameFault::Malformed);
             }
             Ok(ParsedResponse::ReadHolding { data: &body[1..] })
@@ -412,7 +434,12 @@ mod tests {
         assert_eq!(r.register_count(), 3);
         assert_eq!(r.register(2), Some(3));
 
-        build_exception(0x11, FC_READ_HOLDING, ExceptionCode::IllegalDataAddress, &mut adu);
+        build_exception(
+            0x11,
+            FC_READ_HOLDING,
+            ExceptionCode::IllegalDataAddress,
+            &mut adu,
+        );
         let r = parse_response(0x11, FC_READ_HOLDING, adu.bytes()).unwrap();
         assert_eq!(
             r,
@@ -425,7 +452,11 @@ mod tests {
     #[test]
     fn corrupt_crc_is_rejected() {
         let mut adu = Adu::new();
-        build_request(1, &Request::ReadHoldingRegisters { addr: 0, count: 1 }, &mut adu);
+        build_request(
+            1,
+            &Request::ReadHoldingRegisters { addr: 0, count: 1 },
+            &mut adu,
+        );
         let last = adu.len() - 1;
         *adu.byte_mut(last) ^= 0xFF;
         assert_eq!(parse_request(adu.bytes()), Err(FrameFault::BadCrc));

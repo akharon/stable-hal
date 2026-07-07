@@ -45,8 +45,7 @@ pub trait Contract {
     type Event: Clone + fmt::Debug;
 
     fn initial(&self) -> Self::State;
-    fn step(&self, state: &mut Self::State, at: Nanos, event: &Self::Event)
-        -> Result<(), Breach>;
+    fn step(&self, state: &mut Self::State, at: Nanos, event: &Self::Event) -> Result<(), Breach>;
     /// Every clause this contract can enforce. Conformance generation and
     /// coverage reporting enumerate this list.
     fn clauses(&self) -> &'static [&'static Clause];
@@ -67,7 +66,11 @@ impl<E: Clone + fmt::Debug> fmt::Display for Violation<E> {
         write!(
             f,
             "clause {} violated at {} (step {}): {} [{}]",
-            self.breach.clause.id, self.at, self.step, self.breach.clause.text, self.breach.clause.citation
+            self.breach.clause.id,
+            self.at,
+            self.step,
+            self.breach.clause.text,
+            self.breach.clause.citation
         )?;
         if let (Some(m), Some(r)) = (self.breach.measured, self.breach.required) {
             write!(f, " — measured {}, required {}", m, r)?;

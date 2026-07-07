@@ -82,6 +82,8 @@ pub struct SlaveProgress {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
+// ADR-9: Adu is a fixed 256-byte buffer; accepted knowingly.
 enum SState {
     Listening,
     Responding {
@@ -318,7 +320,7 @@ impl RtuSlave {
                         *next_at = now + self.cfg.timing.char_time;
                         if let Some(gap) = self.cfg.bugs.intra_frame_gap {
                             if *idx == 3 && !*gap_inserted {
-                                *next_at = *next_at + gap;
+                                *next_at += gap;
                                 *gap_inserted = true;
                             }
                         }

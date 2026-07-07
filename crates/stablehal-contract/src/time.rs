@@ -71,7 +71,7 @@ impl fmt::Display for Nanos {
         let n = self.0;
         if n == u64::MAX {
             write!(f, "∞")
-        } else if n >= 1_000_000_000 && n % 1_000_000 == 0 {
+        } else if n >= 1_000_000_000 && n.is_multiple_of(1_000_000) {
             write!(f, "{}.{:03}s", n / 1_000_000_000, (n / 1_000_000) % 1_000)
         } else if n >= 1_000_000 {
             write!(f, "{}.{:03}ms", n / 1_000_000, (n / 1_000) % 1_000)

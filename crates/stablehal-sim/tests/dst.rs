@@ -79,8 +79,7 @@ impl Contract for GapContract {
     }
 }
 
-fn gap_observer() -> ContractObserver<GapContract, impl FnMut(u8, &LineEvent) -> Option<GapEvent>>
-{
+fn gap_observer() -> ContractObserver<GapContract, impl FnMut(u8, &LineEvent) -> Option<GapEvent>> {
     ContractObserver::new(
         GapContract { gap: GAP },
         |line, ev| match (line, ev) {
@@ -191,7 +190,12 @@ fn buggy_slack() -> Nanos {
 fn correct_driver_survives_the_whole_envelope() {
     for seed in 0..100 {
         let (outcome, _) = run(seed, Nanos::ZERO);
-        assert!(outcome.is_ok(), "seed {} unexpectedly failed: {:?}", seed, outcome);
+        assert!(
+            outcome.is_ok(),
+            "seed {} unexpectedly failed: {:?}",
+            seed,
+            outcome
+        );
     }
 }
 
@@ -215,7 +219,10 @@ fn dst_sweep_finds_planted_timing_bug_and_seed_replays_exactly() {
     // Replay: identical violation message AND identical wire trace hash.
     let (replay_outcome, replay_hash) = run(seed, buggy_slack());
     assert_eq!(replay_outcome.unwrap_err(), msg);
-    assert_eq!(replay_hash, hash, "seed replay diverged — nondeterminism leak");
+    assert_eq!(
+        replay_hash, hash,
+        "seed replay diverged — nondeterminism leak"
+    );
 }
 
 #[test]

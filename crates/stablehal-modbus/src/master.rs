@@ -41,6 +41,9 @@ pub enum MasterError {
 
 /// Result of one poll.
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
+// ADR-9: Adu is a fixed 256-byte buffer; the size difference across
+// MasterProgress variants is accepted knowingly.
 pub enum MasterProgress {
     /// Transaction in flight. `wake_at`: earliest time another poll is
     /// useful (`None` = only incoming bytes can advance the driver).
@@ -53,7 +56,10 @@ pub enum MasterProgress {
 enum MState {
     Idle,
     WaitSilence,
-    Sending { idx: usize, next_at: Nanos },
+    Sending {
+        idx: usize,
+        next_at: Nanos,
+    },
     AwaitResponse {
         deadline: Nanos,
         last_rx: Option<Nanos>,

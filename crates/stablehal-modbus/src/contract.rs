@@ -7,6 +7,10 @@
 //! conformance tester may *deliberately* emit malformed stimuli while the
 //! device under test is still held to every clause.
 
+#![allow(clippy::large_enum_variant)]
+// ADR-9: Adu is a fixed 256-byte buffer; the size difference across
+// LinePhase variants is accepted knowingly.
+
 use core::mem;
 
 use stablehal_contract::{Breach, Clause, Contract, Nanos, TimeBound};
@@ -26,8 +30,14 @@ pub enum Dir {
 /// directions (transmitter side only — what each party actually emitted).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RtuEvent {
-    CharStart { dir: Dir, byte: u8 },
-    CharEnd { dir: Dir, byte: u8 },
+    CharStart {
+        dir: Dir,
+        byte: u8,
+    },
+    CharEnd {
+        dir: Dir,
+        byte: u8,
+    },
     /// Appended by the harness after all activity (+ ≥ t3.5): finalizes a
     /// trailing frame so it does not escape judgement.
     EndOfObservation,
@@ -84,7 +94,8 @@ pub static CL_RTU_EXC_CODE: Clause = Clause {
 pub static CL_RTU_RESP_TIME: Clause = Clause {
     id: "RTU-RESP-TIME",
     citation: "SL §2.4.1 + §2.5.1.1",
-    text: "A response must start within [t3.5, response_timeout] after the request's last character.",
+    text:
+        "A response must start within [t3.5, response_timeout] after the request's last character.",
 };
 pub static CL_RTU_MASTER_WAIT: Clause = Clause {
     id: "RTU-MASTER-WAIT",

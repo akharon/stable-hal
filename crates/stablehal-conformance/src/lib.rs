@@ -76,12 +76,25 @@ pub enum Stimulus {
 #[derive(Copy, Clone, Debug)]
 pub enum Expected {
     /// FC03 response carrying `pattern(addr+i)` for each register.
-    ReadPattern { addr: u16, count: u16 },
+    ReadPattern {
+        addr: u16,
+        count: u16,
+    },
     /// FC03 response carrying exactly these values.
-    ReadValues { values: &'static [u16] },
-    EchoWriteSingle { addr: u16, value: u16 },
-    EchoWriteMultiple { addr: u16, count: u16 },
-    Exception { code: u8 },
+    ReadValues {
+        values: &'static [u16],
+    },
+    EchoWriteSingle {
+        addr: u16,
+        value: u16,
+    },
+    EchoWriteMultiple {
+        addr: u16,
+        count: u16,
+    },
+    Exception {
+        code: u8,
+    },
     /// No transmission at all within the response window.
     Silence,
 }
@@ -108,7 +121,13 @@ pub static STANDARD_SUITE: &[Case] = &[
     Case {
         id: "READ-BASIC",
         description: "FC03 read of 10 registers returns the pattern",
-        probes: &["RTU-RESP-TIME", "RTU-T35-FRAME", "RTU-CRC", "RTU-RESP-UNIT", "RTU-RESP-FC"],
+        probes: &[
+            "RTU-RESP-TIME",
+            "RTU-T35-FRAME",
+            "RTU-CRC",
+            "RTU-RESP-UNIT",
+            "RTU-RESP-FC",
+        ],
         judge_master_dir: true,
         steps: &[Step {
             stimulus: Stimulus::Valid(CaseRequest::ReadHolding { addr: 0, count: 10 }),
@@ -121,8 +140,14 @@ pub static STANDARD_SUITE: &[Case] = &[
         probes: &["RTU-PDU-FORM"],
         judge_master_dir: true,
         steps: &[Step {
-            stimulus: Stimulus::Valid(CaseRequest::ReadHolding { addr: 0, count: 125 }),
-            expect: Expected::ReadPattern { addr: 0, count: 125 },
+            stimulus: Stimulus::Valid(CaseRequest::ReadHolding {
+                addr: 0,
+                count: 125,
+            }),
+            expect: Expected::ReadPattern {
+                addr: 0,
+                count: 125,
+            },
         }],
     },
     Case {

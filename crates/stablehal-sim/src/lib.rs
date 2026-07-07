@@ -162,8 +162,14 @@ pub struct RunSummary {
 #[derive(Debug)]
 enum Job {
     Poll(usize),
-    TxEnd { line: usize, byte: u8 },
-    Deliver { line: usize, payload: Result<u8, UartError> },
+    TxEnd {
+        line: usize,
+        byte: u8,
+    },
+    Deliver {
+        line: usize,
+        payload: Result<u8, UartError>,
+    },
 }
 
 struct Scheduled {
@@ -339,7 +345,9 @@ impl Sim {
                     // (optionally) corruption.
                     let latency = self.prng.pick(self.config.latency);
                     let corrupt = self.config.corrupt_ppm > 0
-                        && self.prng.chance(u64::from(self.config.corrupt_ppm), 1_000_000);
+                        && self
+                            .prng
+                            .chance(u64::from(self.config.corrupt_ppm), 1_000_000);
                     let payload = if corrupt {
                         let kind = match self.prng.range_inclusive(0, 2) {
                             0 => UartError::Framing,
@@ -417,18 +425,14 @@ where
 {
     fn on_event(&mut self, at: Nanos, line: u8, event: &LineEvent) -> Result<(), String> {
         if let Some(ev) = (self.map)(line, event) {
-            self.oracle
-                .observe(at, &ev)
-                .map_err(|v| format!("{}", v))?;
+            self.oracle.observe(at, &ev).map_err(|v| format!("{}", v))?;
         }
         Ok(())
     }
 
     fn on_end(&mut self, at: Nanos) -> Result<(), String> {
         if let Some(ev) = self.end_event.take() {
-            self.oracle
-                .observe(at, &ev)
-                .map_err(|v| format!("{}", v))?;
+            self.oracle.observe(at, &ev).map_err(|v| format!("{}", v))?;
         }
         Ok(())
     }

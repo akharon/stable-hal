@@ -12,11 +12,11 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use stablehal_contract::{Nanos, SplitMix64};
 use stablehal_conformance::runner::{
     rtu_observer, OwnedRequest, ScriptOutcome, ScriptedMaster, SlaveActor, Txn, Verify,
 };
 use stablehal_conformance::{pattern, DUT_UNIT};
+use stablehal_contract::{Nanos, SplitMix64};
 use stablehal_modbus::{MasterConfig, RegisterBank, RtuTiming, SlaveBugs, SlaveConfig};
 use stablehal_sim::{Sim, SimConfig};
 use stablehal_uart::UartConfig;
@@ -89,7 +89,8 @@ struct RunResult {
 
 fn run_one(seed: u64, corrupt_ppm: u32) -> RunResult {
     let timing = timing();
-    let (master, outcome) = ScriptedMaster::new(MasterConfig::new(timing), build_script(seed), pattern);
+    let (master, outcome) =
+        ScriptedMaster::new(MasterConfig::new(timing), build_script(seed), pattern);
 
     let mut env = SplitMix64::new(seed ^ 0x5EED_0051);
     let response_delay = Nanos::from_nanos(env.range_inclusive(

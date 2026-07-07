@@ -231,8 +231,10 @@ mod tests {
         let mut o = Oracle::new(LineContract::new(CFG));
         let t0 = Nanos::from_millis(1);
         o.observe(t0, &LineEvent::TxStart { byte: 0x01 }).unwrap();
-        o.observe(t0 + ct, &LineEvent::TxEnd { byte: 0x01 }).unwrap();
-        o.observe(t0 + ct, &LineEvent::TxStart { byte: 0x02 }).unwrap();
+        o.observe(t0 + ct, &LineEvent::TxEnd { byte: 0x01 })
+            .unwrap();
+        o.observe(t0 + ct, &LineEvent::TxStart { byte: 0x02 })
+            .unwrap();
         o.observe(t0 + ct + ct, &LineEvent::TxEnd { byte: 0x02 })
             .unwrap();
     }
@@ -243,7 +245,10 @@ mod tests {
         let t0 = Nanos::from_millis(1);
         o.observe(t0, &LineEvent::TxStart { byte: 0x01 }).unwrap();
         let v = o
-            .observe(t0 + Nanos::from_micros(10), &LineEvent::TxStart { byte: 0x02 })
+            .observe(
+                t0 + Nanos::from_micros(10),
+                &LineEvent::TxStart { byte: 0x02 },
+            )
             .unwrap_err();
         assert_eq!(v.breach.clause.id, "UART-NO-OVERLAP");
     }
@@ -254,7 +259,10 @@ mod tests {
         let t0 = Nanos::from_millis(1);
         o.observe(t0, &LineEvent::TxStart { byte: 0x01 }).unwrap();
         let v = o
-            .observe(t0 + Nanos::from_micros(100), &LineEvent::TxEnd { byte: 0x01 })
+            .observe(
+                t0 + Nanos::from_micros(100),
+                &LineEvent::TxEnd { byte: 0x01 },
+            )
             .unwrap_err();
         assert_eq!(v.breach.clause.id, "UART-CHAR-TIME");
     }

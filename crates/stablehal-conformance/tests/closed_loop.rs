@@ -11,12 +11,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use stablehal_contract::{Nanos, SplitMix64};
 use stablehal_conformance::runner::{
     rtu_observer, run_suite, OwnedRequest, ScriptOutcome, ScriptedMaster, SlaveActor, SuiteConfig,
     Txn, Verify,
 };
 use stablehal_conformance::{pattern, DUT_UNIT, STANDARD_SUITE};
+use stablehal_contract::{Nanos, SplitMix64};
 use stablehal_modbus::{MasterConfig, RegisterBank, RtuTiming, SlaveBugs, SlaveConfig};
 use stablehal_sim::{Actor, Sim, SimConfig};
 use stablehal_uart::UartConfig;
@@ -273,7 +273,9 @@ fn master_driver_survives_the_envelope_sweep() {
 #[test]
 fn planted_master_bug_is_caught_by_the_same_oracle() {
     let run = dst_run(7, 0, true);
-    let err = run.result.expect_err("buggy master escaped the wire oracle");
+    let err = run
+        .result
+        .expect_err("buggy master escaped the wire oracle");
     assert!(
         err.contains("RTU-T35-FRAME") || err.contains("RTU-MASTER-WAIT"),
         "unexpected clause: {}",

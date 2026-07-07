@@ -96,7 +96,9 @@ pub enum OwnedRequest {
 pub enum Verify {
     None,
     /// Every returned register equals `pattern(addr + i)`.
-    Pattern { addr: u16 },
+    Pattern {
+        addr: u16,
+    },
     /// Returned registers equal exactly these values.
     Values(Vec<u16>),
 }
@@ -249,7 +251,7 @@ impl Actor for ScriptedMaster {
                     match result {
                         Ok(resp) => {
                             out.completed += 1;
-                            let check = !(txn.needs_prev_ok && !self.prev_ok);
+                            let check = !txn.needs_prev_ok || self.prev_ok;
                             if check {
                                 if let Err(msg) = self.verify(&txn, &resp) {
                                     out.property_failures
@@ -304,6 +306,7 @@ struct TesterActor {
     t35: Nanos,
     window: Nanos,
     /// Per-step received (time, byte-or-fault) pairs.
+    #[allow(clippy::type_complexity)]
     rx_log: Rc<RefCell<Vec<Vec<(Nanos, Result<u8, UartError>)>>>>,
 }
 
@@ -337,7 +340,7 @@ impl Actor for TesterActor {
                     if port.try_write(plan.bytes[i]).is_ok() {
                         let mut nxt = now + self.char_time;
                         if let Some(g) = plan.pre_gap.get(i + 1) {
-                            nxt = nxt + *g;
+                            nxt += *g;
                         }
                         self.state = TesterState::Sending {
                             i: i + 1,
@@ -568,7 +571,9 @@ fn run_case(cfg: &SuiteConfig, case: &Case, dut: Box<dyn Actor>) -> CaseOutcome 
         t35: timing.t35,
         // The response may *start* as late as response_timeout and a maximal
         // ADU (256 chars) takes 256 char times to transmit.
-        window: timing.response_timeout + timing.char_time.mul_ratio(260, 1) + timing.t35.mul_ratio(4, 1),
+        window: timing.response_timeout
+            + timing.char_time.mul_ratio(260, 1)
+            + timing.t35.mul_ratio(4, 1),
         rx_log: rx_log.clone(),
     };
 
