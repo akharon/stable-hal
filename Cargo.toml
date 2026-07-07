@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/stablehal-contract",
+    "crates/stablehal-uart",
+    "crates/stablehal-sim",
+    "crates/stablehal-modbus",
+    "crates/stablehal-conformance",
+    "examples/modbus-master",
+    "examples/buggy-slave",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mkyr/StableHAL"
+
+[workspace.dependencies]
+stablehal-contract = { path = "crates/stablehal-contract" }
+stablehal-uart = { path = "crates/stablehal-uart" }
+stablehal-sim = { path = "crates/stablehal-sim" }
+stablehal-modbus = { path = "crates/stablehal-modbus" }
+stablehal-conformance = { path = "crates/stablehal-conformance" }

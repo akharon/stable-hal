@@ -1,0 +1,13 @@
+[package]
+name = "modbus-master"
+description = "DST sweep demo: MODBUS RTU master driver exercised across the whole environment envelope"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+stablehal-contract = { workspace = true }
+stablehal-uart = { workspace = true }
+stablehal-modbus = { workspace = true }
+stablehal-sim = { workspace = true }
+stablehal-conformance = { workspace = true, features = ["runner"] }

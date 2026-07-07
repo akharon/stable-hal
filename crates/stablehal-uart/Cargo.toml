@@ -1,0 +1,9 @@
+[package]
+name = "stablehal-uart"
+description = "UART HAL contract: SW-facing bus trait + wire-level line contract (char timing, overlap, ordering)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+stablehal-contract = { workspace = true }

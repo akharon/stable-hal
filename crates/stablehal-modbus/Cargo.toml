@@ -1,0 +1,10 @@
+[package]
+name = "stablehal-modbus"
+description = "MODBUS RTU contract (frame timing t1.5/t3.5, CRC, transaction rules) + contract-conforming master driver and reference slave"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+stablehal-contract = { workspace = true }
+stablehal-uart = { workspace = true }

@@ -1,0 +1,81 @@
+StableHAL — Change Log
+=======================
+Format: date — version — changes. Newest first.
+Semantics: "contract version" changes are called out explicitly, because they
+invalidate previously issued conformance certificates.
+
+2026-07-07 — 0.1.0 — Documentation set
+--------------------------------------
+Added:
+  * docs/architecture.md — arc42 architecture specification with mermaid
+    diagrams (context, building blocks, domain/class, runtime sequence &
+    activity, contract/driver state machines, deployment current + deferred
+    hardware phase), ADR table, quality scenarios, risk register, glossary.
+  * docs/user-guide-uart.md — UartBus usage, driver conventions, line
+    contract clauses, backend implementer checklist.
+  * docs/user-guide-simulator.md — sim mental model, SimConfig environment
+    envelope, actor poll protocol, observers, DST sweep patterns, failure
+    reproduction, engine extension rules.
+  * docs/user-guide-modbus.md — RtuTiming, master driver, reference slave,
+    bug catalog, PDU toolbox, wire contract usage and attribution rules.
+  * docs/user-guide-conformance.md — running/reading the suite, the 13
+    standard cases, certifying a custom slave, adding cases, known limits.
+  * docs/design-spec-next.md — detailed design + interface specification for
+    the next milestones (third-party adapter, scheduler extraction + I2C
+    contract, hardware phase capture/certificate formats, harness hardening).
+  * next_steps.md — ordered implementation backlog with acceptance criteria
+    and ground rules, for continuation by another engineer/model.
+  * ChangeLog.txt — this file.
+
+2026-07-07 — 0.1.0 — Initial implementation (M0–M4 complete)
+------------------------------------------------------------
+Added:
+  * crates/stablehal-contract (no_std): contract kernel — Contract trait,
+    Clause with spec citations, Breach/Violation, Oracle (online + offline
+    check_trace), Nanos virtual time + TimeBound envelopes with integer
+    mul_ratio, SplitMix64 seeded PRNG, FNV-1a trace hash. 5 unit tests.
+  * crates/stablehal-uart (no_std): UartBus SW-facing trait (single-depth TX,
+    closed fault vocabulary Framing/Parity/Noise/Overrun), UartConfig with
+    canonical char_time(), LineContract with 3 clauses (UART-NO-OVERLAP,
+    UART-CHAR-TIME ±2% envelope, UART-TX-PAIRING). 4 unit tests.
+  * crates/stablehal-sim (host): deterministic 2-device simulator — virtual
+    clock, (at, seq)-ordered event queue, seeded latency envelope
+    (default 1–50 µs/char) and corruption injection (ppm), online line
+    oracles (wire self-judged), BusObserver + generic ContractObserver hook,
+    trace recording + replay-by-seed. RunSummary with per-actor completion.
+  * crates/stablehal-modbus (no_std): CRC-16/MODBUS (spec vector tested),
+    RtuTiming (t1.5/t3.5 incl. fixed >19200-baud values, response envelope),
+    Adu 256-byte no-alloc frame buffer, PDU builders + validating parsers
+    (FC 03/06/10 + exceptions), RtuContract — 12-clause wire contract with
+    per-direction judgement and poisoned-frame waiver semantics, RtuMaster
+    driver (silence-wait, back-to-back TX, t3.5 frame detection, bounded
+    retries, planted-bug knob), RtuSlave reference + RegisterBank + SlaveBugs
+    catalog (6 bugs, each breaking exactly one clause). 7 unit tests.
+  * crates/stablehal-conformance: no_std case definitions (13-case
+    STANDARD_SUITE incl. matched timing-probe pair GAP-T15-ACCEPTED /
+    SPLIT-FRAME-SILENT) + host runner (TesterActor with deliberate-violation
+    stimuli, SlaveActor and ScriptedMaster adapters, rtu_observer, Report).
+  * examples/modbus-master: DST sweep CLI (--seeds/--corrupt/--replay-check).
+  * examples/buggy-slave: closed-loop conformance demo CLI.
+  * paper/whitepaper.md: draft v0.1 with measured results.
+  * README.md, Cargo workspace (zero external dependencies).
+Verified (all reproducible):
+  * 24 tests green (unit + DST self-test + closed loop).
+  * M1 exit criterion: planted envelope-dependent timing bug (~1%/txn) found
+    by 200-seed sweep; failing seed replays with identical trace hash.
+  * Closed loop: reference slave 13/13; all 6 buggy slaves caught with the
+    exact clause named; planted master bug caught by the same oracle.
+  * 10,000-seed sweep: 9,876,528 wire events judged, 0 violations, 0 silent
+    data corruptions, 11 honest give-ups under 2000 ppm corruption; 9.7 s.
+Contract versions introduced:
+  * uart-line v0.1 (3 clauses), modbus-rtu v0.1 (12 clauses, FC 03/06/10
+    subset, unicast).
+
+2026-07-06 — pre-0.1 — Research & plan
+--------------------------------------
+  * Prior-art survey (DST: FoundationDB/Antithesis/WarpStream; Renode;
+    P language; UniTESK; arXiv 2512.16897; OPC UA CTT; PHiLIP) and
+    feasibility framing: determinism as a property of the contract, bounded
+    nondeterminism, integration test → one-time per-HW-revision
+    certification. Decisions: MODBUS RTU pilot, Rust, prototype+whitepaper,
+    sim-first. Plan approved.
