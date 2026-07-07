@@ -8,6 +8,7 @@ members = [
     "crates/stablehal-conformance",
     "examples/modbus-master",
     "examples/buggy-slave",
+    "adapters/rmodbus-slave",
 ]
 
 [workspace.package]

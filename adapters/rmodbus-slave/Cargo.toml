@@ -1,0 +1,14 @@
+[package]
+name = "rmodbus-slave"
+description = "Experimental: third-party MODBUS crate (rmodbus) behind UartBus. Whitepaper E5."
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+stablehal-contract = { path = "../../crates/stablehal-contract" }
+stablehal-uart = { path = "../../crates/stablehal-uart" }
+stablehal-modbus = { path = "../../crates/stablehal-modbus" }
+stablehal-sim = { path = "../../crates/stablehal-sim" }
+stablehal-conformance = { path = "../../crates/stablehal-conformance", features = ["runner"] }
+rmodbus = "=0.12.2"

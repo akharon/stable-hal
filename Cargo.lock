@@ -14,9 +14,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "ieee754"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9007da9cacbd3e6343da136e98b0d2df013f553d35bdec8b518f07bea768e19c"
+
+[[package]]
 name = "modbus-master"
 version = "0.1.0"
 dependencies = [
+ "stablehal-conformance",
+ "stablehal-contract",
+ "stablehal-modbus",
+ "stablehal-sim",
+ "stablehal-uart",
+]
+
+[[package]]
+name = "rmodbus"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae086fe401655097112f1bd988012c0334d19b0c495128b256f1506873c6ba8f"
+dependencies = [
+ "ieee754",
+]
+
+[[package]]
+name = "rmodbus-slave"
+version = "0.1.0"
+dependencies = [
+ "rmodbus",
  "stablehal-conformance",
  "stablehal-contract",
  "stablehal-modbus",

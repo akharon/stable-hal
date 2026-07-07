@@ -1,0 +1,17 @@
+/home/mkyr/StableHAL/target/debug/deps/rmodbus-f836c775fb7123c8.d: /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/lib.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/client.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/consts.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/mod.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/context.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/representable.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/storage.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/vector.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/error.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/README.md /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/CHANGELOG.md
+
+/home/mkyr/StableHAL/target/debug/deps/librmodbus-f836c775fb7123c8.rmeta: /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/lib.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/client.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/consts.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/mod.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/context.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/representable.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/storage.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/vector.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/error.rs /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/README.md /home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/CHANGELOG.md
+
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/lib.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/client.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/consts.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/mod.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/context.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/representable.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/server/storage.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/vector.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/src/error.rs:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/README.md:
+/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2/CHANGELOG.md:
+
+# env-dep:CARGO_MANIFEST_DIR=/home/mkyr/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rmodbus-0.12.2
