@@ -92,8 +92,7 @@ impl RmodbusSlaveActor {
         // Hand raw ADU bytes to rmodbus. Do NOT pre-filter unit or CRC —
         // whether rmodbus discards them is exactly what the suite measures.
         let mut response = Vec::new();
-        let mut frame =
-            ModbusFrame::new(self.unit, &bytes, ModbusProto::Rtu, &mut response);
+        let mut frame = ModbusFrame::new(self.unit, &bytes, ModbusProto::Rtu, &mut response);
         if frame.parse().is_err() {
             // rmodbus rejected the frame (bad CRC, broken, etc.) — silent discard.
             return None;
@@ -162,11 +161,7 @@ impl Actor for RmodbusSlaveActor {
                     NextPoll::At(frame_complete_at)
                 }
             }
-            RState::Responding {
-                idx,
-                next_at,
-                resp,
-            } => {
+            RState::Responding { idx, next_at, resp } => {
                 if *idx >= resp.len() {
                     // Response fully sent.
                     self.state = RState::Listening;

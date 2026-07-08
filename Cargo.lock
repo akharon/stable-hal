@@ -14,6 +14,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-can"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9d2e857f87ac832df68fa498d18ddc679175cf3d2e4aa893988e5601baf9438"
+dependencies = [
+ "nb",
+]
+
+[[package]]
+name = "embedded-hal"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+
+[[package]]
+name = "embedded-io"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
+
+[[package]]
 name = "ieee754"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -29,6 +50,12 @@ dependencies = [
  "stablehal-sim",
  "stablehal-uart",
 ]
+
+[[package]]
+name = "nb"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d5439c4ad607c3c23abf66de8c8bf57ba8adcd1f129e699851a6e43935d339d"
 
 [[package]]
 name = "rmodbus"
@@ -52,10 +79,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "stablehal-can"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+]
+
+[[package]]
+name = "stablehal-certify"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+ "stablehal-modbus",
+ "stablehal-shc1",
+ "stablehal-uart",
+]
+
+[[package]]
 name = "stablehal-conformance"
 version = "0.1.0"
 dependencies = [
  "stablehal-contract",
+ "stablehal-i2c",
  "stablehal-modbus",
  "stablehal-sim",
  "stablehal-uart",
@@ -66,6 +111,34 @@ name = "stablehal-contract"
 version = "0.1.0"
 
 [[package]]
+name = "stablehal-embedded-hal"
+version = "0.1.0"
+dependencies = [
+ "embedded-can",
+ "embedded-hal",
+ "embedded-io",
+ "stablehal-can",
+ "stablehal-contract",
+ "stablehal-i2c",
+ "stablehal-spi",
+ "stablehal-uart",
+]
+
+[[package]]
+name = "stablehal-i2c"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+]
+
+[[package]]
+name = "stablehal-lin"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+]
+
+[[package]]
 name = "stablehal-modbus"
 version = "0.1.0"
 dependencies = [
@@ -74,11 +147,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "stablehal-shc1"
+version = "0.1.0"
+dependencies = [
+ "stablehal-conformance",
+ "stablehal-contract",
+ "stablehal-modbus",
+ "stablehal-sim",
+ "stablehal-uart",
+]
+
+[[package]]
 name = "stablehal-sim"
 version = "0.1.0"
 dependencies = [
  "stablehal-contract",
+ "stablehal-i2c",
+ "stablehal-lin",
  "stablehal-uart",
+]
+
+[[package]]
+name = "stablehal-spi"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
 ]
 
 [[package]]

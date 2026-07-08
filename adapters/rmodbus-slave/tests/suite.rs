@@ -31,7 +31,7 @@ fn rmodbus_versus_standard_suite() {
     println!("Rmodbus adapter vs STANDARD_SUITE");
     println!("rmodbus version: 0.12.2");
     println!();
-    println!("{:<28} {:>7}  {}", "case", "pass", "detail");
+    println!("{:<28} {:>7}  detail", "case", "pass");
     println!("{}", "-".repeat(90));
     for outcome in &report.outcomes {
         let status = if outcome.pass { "PASS" } else { "FAIL" };
@@ -53,7 +53,12 @@ fn rmodbus_versus_standard_suite() {
         report
             .outcomes
             .iter()
-            .map(|o| format!("{}: {} — {}", o.id, if o.pass { "PASS" } else { "FAIL" }, o.detail))
+            .map(|o| format!(
+                "{}: {} — {}",
+                o.id,
+                if o.pass { "PASS" } else { "FAIL" },
+                o.detail
+            ))
             .collect::<Vec<_>>()
             .join("\n")
     );

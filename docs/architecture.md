@@ -139,6 +139,31 @@ Dependency rule: arrows only point "down" toward the kernel. `stablehal-sim`
 never depends on `stablehal-modbus`; protocol knowledge reaches the simulator
 only through the `BusObserver` interface.
 
+**I2C (WP2 §2.2)** is a second, independent protocol stack added alongside
+MODBUS, deliberately not sharing code beyond the kernel: `stablehal-i2c`
+(`no_std`: `I2cContract`, `I2cMaster`/`I2cSlaveDevice` traits,
+`RegisterPointerDevice`, `ScriptedMaster`) depends only on
+`stablehal-contract`, mirroring `stablehal-modbus`'s shape but with its own
+event enum (`I2cEvent`, never merged with `LineEvent`). `stablehal-sim`
+gained a second, self-contained world — `stablehal_sim::i2c::I2cWorld` — that
+builds its own `Scheduler<Job>` the same way `Sim` does, rather than reusing
+`Sim`'s 2-actor UART-shaped engine. `stablehal-conformance::i2c` follows the
+same `no_std`-core / `runner`-feature split as the MODBUS suite. See
+`docs/user-guide-i2c.md` for the full API walkthrough and clause table.
+
+#### Clause registry
+
+| Contract | Version | Clauses | Certificate `contract` code |
+|---|---|---|---|
+| uart-line | 0.1 | 3 | 0x0002 |
+| modbus-rtu | 0.1 | 12 | 0x0001 |
+| i2c | 0.1 | 7 | 0x0003 (reserved) |
+
+I2C v1 clauses (full text and citations in `docs/user-guide-i2c.md` §5):
+`I2C-SEQ`, `I2C-BUS-FREE`, `I2C-BYTE-TIME`, `I2C-READ-NACK-LAST`,
+`I2C-ADDR-ACK`, `I2C-STRETCH-MAX`, `I2C-WRITE-ACK`. `I2C-ARBITRATION` is
+reserved for v2 multi-master support and is not implemented.
+
 ### 5.2 Level 2 — domain model (kernel)
 
 ```mermaid

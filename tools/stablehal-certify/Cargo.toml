@@ -1,0 +1,16 @@
+[package]
+name = "stablehal-certify"
+description = "Host tool: parse an SHC1 capture, judge it against the RTU contract oracle, and emit a conformance certificate (hand-rolled JSON, zero third-party deps)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "stablehal-certify"
+path = "src/main.rs"
+
+[dependencies]
+stablehal-contract = { workspace = true }
+stablehal-modbus = { workspace = true }
+stablehal-uart = { workspace = true }
+stablehal-shc1 = { workspace = true }

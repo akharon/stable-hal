@@ -1,0 +1,9 @@
+[package]
+name = "stablehal-lin"
+description = "LIN 2.2A transaction contract (break/sync/PID/checksum, frame timing) + conforming master (schedule-driven) driver and reference slave"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+stablehal-contract = { workspace = true }

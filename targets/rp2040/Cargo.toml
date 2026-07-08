@@ -1,0 +1,43 @@
+[package]
+name = "stablehal-rp2040"
+description = "RP2040 (RP Zero / Pico) target: UartBus over the on-chip UART, DUT slave firmware, tester+SHC1-writer firmware. T7 (WP3.3)."
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# Standalone Cargo.toml (not a member of the host workspace): embedded
+# targets need their own panic handler, linker script, and a target triple
+# (thumbv6m-none-eabi) the host toolchain does not have installed. Build
+# from this directory: `cargo build --release --target thumbv6m-none-eabi`.
+
+[dependencies]
+stablehal-contract = { path = "../../crates/stablehal-contract" }
+stablehal-uart = { path = "../../crates/stablehal-uart" }
+stablehal-modbus = { path = "../../crates/stablehal-modbus" }
+stablehal-shc1 = { path = "../../crates/stablehal-shc1" }
+
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+rp2040-hal = { version = "0.12", features = ["rt", "critical-section-impl"] }
+rp2040-boot2 = "0.3"
+panic-halt = "0.2"
+embedded-hal = "1.0"
+embedded-hal-nb = "1.0"
+nb = "1"
+fugit = "0.3"
+heapless = "0.8"
+
+[[bin]]
+name = "dut-slave"
+path = "src/bin/dut_slave.rs"
+
+[[bin]]
+name = "tester"
+path = "src/bin/tester.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = true
+panic = "abort"

@@ -5,10 +5,17 @@ members = [
     "crates/stablehal-uart",
     "crates/stablehal-sim",
     "crates/stablehal-modbus",
+    "crates/stablehal-i2c",
     "crates/stablehal-conformance",
+    "crates/stablehal-shc1",
+    "crates/stablehal-spi",
+    "crates/stablehal-can",
+    "crates/stablehal-lin",
+    "crates/stablehal-embedded-hal",
     "examples/modbus-master",
     "examples/buggy-slave",
     "adapters/rmodbus-slave",
+    "tools/stablehal-certify",
 ]
 
 [workspace.package]
@@ -22,4 +29,10 @@ stablehal-contract = { path = "crates/stablehal-contract" }
 stablehal-uart = { path = "crates/stablehal-uart" }
 stablehal-sim = { path = "crates/stablehal-sim" }
 stablehal-modbus = { path = "crates/stablehal-modbus" }
+stablehal-i2c = { path = "crates/stablehal-i2c" }
 stablehal-conformance = { path = "crates/stablehal-conformance" }
+stablehal-shc1 = { path = "crates/stablehal-shc1" }
+stablehal-spi = { path = "crates/stablehal-spi" }
+stablehal-can = { path = "crates/stablehal-can" }
+stablehal-lin = { path = "crates/stablehal-lin" }
+stablehal-embedded-hal = { path = "crates/stablehal-embedded-hal" }

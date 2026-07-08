@@ -15,4 +15,5 @@ runner = ["dep:stablehal-sim"]
 stablehal-contract = { workspace = true }
 stablehal-uart = { workspace = true }
 stablehal-modbus = { workspace = true }
+stablehal-i2c = { workspace = true }
 stablehal-sim = { workspace = true, optional = true }

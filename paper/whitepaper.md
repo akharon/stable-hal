@@ -1,6 +1,6 @@
 # StableHAL: Replacing Recurring Integration Tests with a Deterministic, Contract-Enforcing HAL
 
-*Draft v0.1 — July 2026. All measurements reproduce from this repository at the stated commands.*
+*Draft v0.2 — July 2026. All measurements reproduce from this repository at the stated commands.*
 
 ## Abstract
 
@@ -24,7 +24,12 @@ pilot: a 12-clause wire contract with spec traceability, a conforming master
 driver and reference slave, a 13-case generated conformance suite, and a DST
 harness that judged 9.88 million wire events across 10,000 seeded environment
 schedules with zero violations, zero silent data corruptions, and byte-exact
-seed replay — in under ten seconds on one laptop core.
+seed replay — in under ten seconds on one laptop core. We further show the
+approach generalizes: the same kernel judges an unrelated third-party MODBUS
+stack (rmodbus) with zero contract changes, and a second, independently
+modeled protocol (I2C — a 7-clause transaction contract covering clock
+stretching, ACK discipline, and bus-free timing) closes an identical loop
+end to end.
 
 ## 1. The problem: HALs are signatures, not agreements
 
@@ -157,6 +162,16 @@ Beneath it, a 3-clause UART line contract (character timing, no overlap,
 start/end pairing) guards the physical framing layer, with a 2% clock
 tolerance envelope.
 
+### 4.1 Second pilot: I2C transaction layer
+
+I2C's 7 v1 clauses (`I2C-SEQ`, `I2C-BUS-FREE`, `I2C-BYTE-TIME`,
+`I2C-READ-NACK-LAST`, `I2C-ADDR-ACK`, `I2C-STRETCH-MAX`, `I2C-WRITE-ACK`;
+full text and NXP UM10204/SMBus 3.x citations in
+`docs/user-guide-i2c.md` §5) are modeled at byte/ACK/Start-Stop granularity,
+the level software contracts actually live at — mirroring the UART-line vs.
+MODBUS-frame split in §4. Multi-master arbitration is reserved
+(`I2C-ARBITRATION`) and explicitly unimplemented in v1. See E6 for results.
+
 ## 5. Evaluation
 
 All numbers measured on this repository (single laptop core, debug oracle in
@@ -209,10 +224,58 @@ envelope.
 divergence. There is no wall-clock dependence anywhere in the system
 (virtual time only), and the only entropy source is the run's seed.
 
+**E5 — an independent third-party stack, same oracle, zero contract
+changes.** We swapped the reference slave's protocol logic for `rmodbus`
+0.12.2 (a MIT-licensed, independently authored MODBUS implementation) behind
+the identical `UartBus`/simulator boundary and ran the unchanged 13-case
+suite against it. Result: **10/13 pass**; the 3 failures are *measured
+differences*, not oracle bugs — rmodbus's larger register space (10k vs.
+our 128-register reference) means out-of-range addresses return data
+instead of exception 0x02, and its `count = 0` handling on FC03 returns one
+register instead of raising exception 0x03. This is exactly the intended
+outcome: the same clause-labeled oracle, unmodified, characterizes a
+third-party implementation's real behavioral deviations without anyone
+writing bespoke test code for it.
+(`cargo test -p rmodbus-slave --test suite`)
+
+**E6 — a second, independently modeled protocol closes the identical
+loop.** I2C is a materially different protocol from MODBUS RTU: multi-drop
+addressing (not point-to-point), slave-initiated clock stretching (not just
+master-side timeouts), and ACK/NACK at every byte (not just frame-level
+CRC). We built its contract from scratch — 7 clauses (`I2C-SEQ`,
+`I2C-BUS-FREE`, `I2C-BYTE-TIME`, `I2C-READ-NACK-LAST`, `I2C-ADDR-ACK`,
+`I2C-STRETCH-MAX`, `I2C-WRITE-ACK`), citing UM10204 rev 7 and SMBus 3.x —
+sharing with the MODBUS pilot only the kernel primitives (`Contract`,
+`Oracle`, `Nanos`/`TimeBound`, the seeded PRNG, and the `(at, seq)`-ordered
+scheduler), never the event types or the simulator engine itself. Reference
+master + reference register-pointer device pass the whole seeded envelope;
+each of 3 planted device bugs (`stretch_over_cap`, `nack_own_addr`,
+`wrong_read_data`) is caught with the exact clause named, or correctly
+*not* flagged when the bug is a data-correctness issue rather than a
+wire-protocol breach (`wrong_read_data` — confirming the oracle's judgement
+boundary is precise, not merely permissive); seed replay is byte-exact.
+(`cargo test -p stablehal-sim --test i2c_dst`)
+
+**E7 — capture-and-certify round-trip.** We built the SHC1 capture format
+and a standalone certifier tool (`tools/stablehal-certify`, zero
+third-party dependencies) that parses a capture, maps records to the same
+event types the simulator emits, and judges them with the identical
+`RtuContract` oracle. For the conforming reference and all 6 cataloged
+`SlaveBugs`, the simulator's own verdict and the certifier-from-capture
+verdict agree exactly — this is the load-bearing property for §7's
+deferred hardware phase: a physical capture will be judged by literal
+byte-identical logic to what already validated the simulation, not a
+reimplementation that could silently diverge.
+(`cargo test -p stablehal-shc1 --test round_trip`)
+
 **Effort accounting.** Contract kernel ≈ 500 LoC; UART contract ≈ 260;
-simulator ≈ 440; MODBUS contract + drivers ≈ 1,600; conformance suite +
-runner ≈ 930. The 12 RTU clauses cover the normative timing/framing content
-of ~15 pages of the two MODBUS specs relevant to the subset.
+simulator ≈ 440 (+ ≈80 for the extracted `Scheduler<J>`); MODBUS contract +
+drivers ≈ 1,600; conformance suite + runner ≈ 930; I2C contract + reference
+device/master + `I2cWorld` ≈ 1,150; SHC1 codec + certifier ≈ 340. The 12
+RTU clauses cover the normative timing/framing content of ~15 pages of the
+two MODBUS specs relevant to the subset; the 7 I2C clauses cover the
+transaction-layer content of UM10204's normative timing table plus the
+SMBus stretch-cap convention.
 
 ## 6. Limits and threats to validity
 
@@ -232,33 +295,57 @@ of ~15 pages of the two MODBUS specs relevant to the subset.
   a maximally late response may still arrive; the contract makes the race
   visible (it is an envelope-edge case), which we consider a feature —
   the ambiguity is in the spec, and deployments should configure margins.
-* **Single pilot protocol.** MODBUS RTU is favorable terrain (that is why it
-  was chosen). Generalization claims await a second contract (I2C
-  transaction layer is the natural next: clock stretching, NACK semantics,
-  multi-master arbitration).
+* **Generalization is evidenced, not proven.** MODBUS RTU is favorable
+  terrain (that is why it was chosen). A second, independently modeled
+  contract (I2C — E6) now exists and closes the identical loop, sharing only
+  kernel primitives with the first; this is evidence the approach is not an
+  artifact of MODBUS specifically, but two data points do not establish a
+  general theory of which protocols this scales to, and multi-master I2C
+  arbitration remains explicitly out of scope (v1: single master only).
 
 ## 7. The deferred hardware phase
 
-Nothing in the oracle or suite is simulator-specific (`no_std` throughout):
+Nothing in the oracle or suite is simulator-specific (`no_std` throughout).
+Two of the three pieces below are now built and validated entirely in
+simulation (E7); the third — real hardware — remains future work.
 
-1. **On-target conformance runner** (RP2040 or STM32 Nucleo): the tester
-   plays the same 13 cases over a real RS-485/UART link against the DUT;
-   captured timestamps feed the identical oracle.
-2. **Bus observer**: a PHiLIP-style reference instrument (RP2040 PIO is
-   sufficient for 8E1 timestamping at ≤115,200 baud) witnesses the wire so
-   the DUT is judged on physical truth, not on its own self-report.
-3. **Certification artifact**: suite verdict + trace hashes + contract
-   version, per hardware revision. Any later field divergence is triaged
-   against the same clauses.
+1. **Capture format and certifier — done (E7).** SHC1 is a binary,
+   resync-tolerant stream format a PIO/ISR can emit with no buffering
+   cleverness; `stablehal-certify` parses it and judges captures with the
+   identical oracle used in simulation. The round-trip identity (simulator
+   verdict == certifier-from-capture verdict, for the reference and every
+   cataloged bug) is proven now, before any firmware exists — so the
+   hardware phase inherits validated codec and mapping logic rather than
+   writing it under time pressure against a live board.
+2. **On-target conformance runner** (RP2040 or STM32 Nucleo) — not yet
+   built: the tester plays the same 13 cases over a real RS-485/UART link
+   against the DUT; captured timestamps feed the identical oracle via the
+   SHC1 path above.
+3. **Bus observer** — not yet built: a PHiLIP-style reference instrument
+   (RP2040 PIO is sufficient for 8E1 timestamping at ≤115,200 baud)
+   witnesses the wire so the DUT is judged on physical truth, not on its
+   own self-report.
+4. **Certification artifact.** The certificate schema (contract id/version,
+   UART framing, derived timing envelope, capture record/gap counts, trace
+   hash, verdict) is defined and emitted by `stablehal-certify` today for
+   simulator-derived captures; a hardware capture is a drop-in input once
+   items 2–3 exist. Any later field divergence is triaged against the same
+   clauses.
 
 ## 8. Conclusion
 
 The pilot demonstrates, end to end and reproducibly, that the HAL boundary
 can be governed by one executable contract whose simulator explores the whole
-agreed envelope and whose oracle judges both parties. On this terrain the
-integration test is not "eliminated" — it is *transformed*: from a recurring,
-manual, irreproducible activity into (a) seeded CI sweeps and (b) a one-time
-per-revision certification, both pinned to clauses a counterparty signed.
+agreed envelope and whose oracle judges both parties. Two extensions
+strengthen the claim beyond a single favorable protocol: the same oracle,
+unmodified, characterizes a third-party implementation's real deviations
+(E5), and a second, independently modeled protocol closes an identical loop
+sharing only kernel primitives (E6) — evidence the pattern is not MODBUS-
+specific. The capture/certify path (E7) is now validated in simulation,
+ahead of hardware. On this terrain the integration test is not "eliminated"
+— it is *transformed*: from a recurring, manual, irreproducible activity
+into (a) seeded CI sweeps and (b) a one-time per-revision certification,
+both pinned to clauses a counterparty signed.
 
 ---
 

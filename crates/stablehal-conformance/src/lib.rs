@@ -14,6 +14,8 @@
 #[cfg(feature = "runner")]
 pub mod runner;
 
+pub mod i2c;
+
 /// Register initialization pattern the suite assumes.
 pub fn pattern(addr: u16) -> u16 {
     0xA000 | addr

@@ -1,0 +1,11 @@
+[build]
+target = "thumbv6m-none-eabi"
+
+[target.thumbv6m-none-eabi]
+rustflags = [
+    "-C", "link-arg=--nmagic",
+    "-C", "link-arg=-Tlink.x",
+]
+# Flash + run over SWD via probe-rs once hardware is on the bench:
+#   cargo install probe-rs-tools
+#   runner = "probe-rs run --chip RP2040"

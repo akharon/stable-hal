@@ -17,11 +17,15 @@
 
 #![deny(unsafe_code)]
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+pub mod i2c;
+pub mod lin;
+mod sched;
+
+use std::collections::VecDeque;
 use std::fmt;
 
-use stablehal_contract::{Nanos, Oracle, SplitMix64, TimeBound, TraceEvent, Violation};
+use sched::Scheduler;
+use stablehal_contract::{Nanos, Oracle, TimeBound, TraceEvent, Violation};
 use stablehal_uart::{LineContract, LineEvent, TxBusy, UartBus, UartConfig, UartError};
 
 // ---------------------------------------------------------------------------
@@ -177,29 +181,6 @@ enum Job {
     },
 }
 
-struct Scheduled {
-    at: Nanos,
-    seq: u64,
-    job: Job,
-}
-
-impl PartialEq for Scheduled {
-    fn eq(&self, other: &Self) -> bool {
-        self.at == other.at && self.seq == other.seq
-    }
-}
-impl Eq for Scheduled {}
-impl PartialOrd for Scheduled {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for Scheduled {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.at, self.seq).cmp(&(other.at, other.seq))
-    }
-}
-
 struct PortCore {
     tx_busy_until: Nanos,
     rx_queue: VecDeque<Result<u8, UartError>>,
@@ -208,10 +189,7 @@ struct PortCore {
 pub struct Sim {
     config: SimConfig,
     char_time: Nanos,
-    now: Nanos,
-    seq: u64,
-    queue: BinaryHeap<Reverse<Scheduled>>,
-    prng: SplitMix64,
+    sched: Scheduler<Job>,
     ports: [PortCore; 2],
     actors: [Box<dyn Actor>; 2],
     done: [bool; 2],
@@ -227,10 +205,7 @@ impl Sim {
         let contract = LineContract::new(config.uart);
         Sim {
             char_time: config.uart.char_time(),
-            now: Nanos::ZERO,
-            seq: 0,
-            queue: BinaryHeap::new(),
-            prng: SplitMix64::new(config.seed),
+            sched: Scheduler::new(config.seed),
             ports: [
                 PortCore {
                     tx_busy_until: Nanos::ZERO,
@@ -259,7 +234,7 @@ impl Sim {
         &self.config
     }
     pub fn now(&self) -> Nanos {
-        self.now
+        self.sched.now()
     }
     pub fn trace(&self) -> &[TraceEvent<(u8, LineEvent)>] {
         &self.trace
@@ -269,26 +244,21 @@ impl Sim {
         stablehal_contract::trace::trace_hash(self.trace.iter())
     }
 
-    fn schedule(&mut self, at: Nanos, job: Job) {
-        let seq = self.seq;
-        self.seq += 1;
-        self.queue.push(Reverse(Scheduled { at, seq, job }));
-    }
-
     /// Record a wire event, run it through the line oracle and observers.
     fn emit(&mut self, line: usize, event: LineEvent) -> Result<(), SimError> {
+        let now = self.sched.now();
         self.trace.push(TraceEvent {
-            at: self.now,
+            at: now,
             event: (line as u8, event),
         });
         self.line_oracles[line]
-            .observe(self.now, &event)
+            .observe(now, &event)
             .map_err(|violation| SimError::Line {
                 line: line as u8,
                 violation,
             })?;
         for obs in &mut self.observers {
-            obs.on_event(self.now, line as u8, &event)
+            obs.on_event(now, line as u8, &event)
                 .map_err(|message| SimError::Observer { message })?;
         }
         Ok(())
@@ -299,28 +269,29 @@ impl Sim {
             return Ok(());
         }
         debug_assert!(self.staged_tx.is_empty());
+        let now = self.sched.now();
         let next = {
             let port_core = &mut self.ports[i];
             let mut port = UartPort {
-                now: self.now,
+                now,
                 char_time: self.char_time,
                 tx_busy_until: &mut port_core.tx_busy_until,
                 rx_queue: &mut port_core.rx_queue,
                 staged_tx: &mut self.staged_tx,
             };
-            self.actors[i].poll(self.now, &mut port)
+            self.actors[i].poll(now, &mut port)
         };
         // Turn staged writes into wire events. `try_write` allows at most one
         // pending character, so at most one byte is staged per poll.
         let staged: Vec<u8> = self.staged_tx.drain(..).collect();
         for byte in staged {
             self.emit(i, LineEvent::TxStart { byte })?;
-            self.schedule(self.now + self.char_time, Job::TxEnd { line: i, byte });
+            self.sched
+                .schedule(now + self.char_time, Job::TxEnd { line: i, byte });
         }
         match next {
             NextPoll::At(t) => {
-                let t = t.max(self.now);
-                self.schedule(t, Job::Poll(i));
+                self.sched.schedule(t, Job::Poll(i));
             }
             NextPoll::OnRx => {}
             NextPoll::Done => self.done[i] = true,
@@ -331,34 +302,30 @@ impl Sim {
     /// Run until the deadline (or both actors are done). On violation the
     /// run aborts; the trace up to and including the offending event is kept.
     pub fn run_until(&mut self, deadline: Nanos) -> Result<RunSummary, SimError> {
-        self.schedule(self.now, Job::Poll(0));
-        self.schedule(self.now, Job::Poll(1));
+        let start = self.sched.now();
+        self.sched.schedule(start, Job::Poll(0));
+        self.sched.schedule(start, Job::Poll(1));
 
-        while let Some(Reverse(next)) = self.queue.pop() {
-            if next.at > deadline {
-                // Put it back conceptually; the run is over.
-                break;
-            }
-            debug_assert!(next.at >= self.now, "virtual time must not go backwards");
-            self.now = next.at;
-            match next.job {
+        while let Some((now, job)) = self.sched.pop_due(deadline) {
+            match job {
                 Job::Poll(i) => self.poll_actor(i)?,
                 Job::TxEnd { line, byte } => {
                     self.emit(line, LineEvent::TxEnd { byte })?;
                     // Environment nondeterminism, drawn from the seeded
                     // stream *in event order*: propagation latency, then
                     // (optionally) corruption.
-                    let latency = if self.config.boundary_bias {
-                        self.prng.pick_biased(self.config.latency)
+                    let boundary_bias = self.config.boundary_bias;
+                    let corrupt_ppm = self.config.corrupt_ppm;
+                    let latency_bound = self.config.latency;
+                    let prng = self.sched.prng();
+                    let latency = if boundary_bias {
+                        prng.pick_biased(latency_bound)
                     } else {
-                        self.prng.pick(self.config.latency)
+                        prng.pick(latency_bound)
                     };
-                    let corrupt = self.config.corrupt_ppm > 0
-                        && self
-                            .prng
-                            .chance(u64::from(self.config.corrupt_ppm), 1_000_000);
+                    let corrupt = corrupt_ppm > 0 && prng.chance(u64::from(corrupt_ppm), 1_000_000);
                     let payload = if corrupt {
-                        let kind = match self.prng.range_inclusive(0, 2) {
+                        let kind = match prng.range_inclusive(0, 2) {
                             0 => UartError::Framing,
                             1 => UartError::Parity,
                             _ => UartError::Noise,
@@ -367,7 +334,8 @@ impl Sim {
                     } else {
                         Ok(byte)
                     };
-                    self.schedule(self.now + latency, Job::Deliver { line, payload });
+                    self.sched
+                        .schedule(now + latency, Job::Deliver { line, payload });
                 }
                 Job::Deliver { line, payload } => {
                     let ev = match payload {
@@ -377,7 +345,7 @@ impl Sim {
                     self.emit(line, ev)?;
                     let receiver = 1 - line;
                     self.ports[receiver].rx_queue.push_back(payload);
-                    self.schedule(self.now, Job::Poll(receiver));
+                    self.sched.schedule(now, Job::Poll(receiver));
                 }
             }
             if self.done == [true, true] {
@@ -385,7 +353,7 @@ impl Sim {
             }
         }
 
-        let end_at = self.now + self.char_time.mul_ratio(7, 2) + Nanos::from_millis(1);
+        let end_at = self.sched.now() + self.char_time.mul_ratio(7, 2) + Nanos::from_millis(1);
         for obs in &mut self.observers {
             obs.on_end(end_at)
                 .map_err(|message| SimError::Observer { message })?;
@@ -395,7 +363,7 @@ impl Sim {
             events: self.trace.len(),
             done: self.done,
             all_done: self.done == [true, true],
-            ended_at: self.now,
+            ended_at: self.sched.now(),
         })
     }
 }

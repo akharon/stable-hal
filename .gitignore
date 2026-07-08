@@ -1,0 +1,22 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Backup files from cargo fix / rustfmt
+**/*.rs.bk
+
+# rp2040 / embedded target build output (targets/rp2040 is a standalone
+# Cargo project with its own thumbv6m-none-eabi target dir)
+targets/*/target/
+
+# Local tool/indexing state (not part of the project source)
+/.pairs/
+
+# Editor/OS cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Local scratch/output files that sometimes land at the repo root
+*.shc1
