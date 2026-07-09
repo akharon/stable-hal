@@ -8,17 +8,18 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use stablehal_contract::Nanos;
+use stablehal_contract::oracle::check_trace_measured;
+use stablehal_contract::{EnvelopeAccumulator, Nanos};
 use stablehal_modbus::contract::{Dir, RtuContract, RtuEvent};
 use stablehal_modbus::pdu::{self, Adu};
 use stablehal_modbus::{
-    MasterConfig, MasterProgress, RegisterBank, RtuMaster, RtuSlave, RtuTiming, SlaveConfig,
-    SlaveProgress,
+    MasterConfig, MasterProgress, RegisterBank, RtuMaster, RtuSlave, RtuTiming, SlaveBugs,
+    SlaveConfig, SlaveProgress,
 };
 use stablehal_sim::{Actor, BusObserver, ContractObserver, NextPoll, Sim, SimConfig, UartPort};
 use stablehal_uart::{LineEvent, UartBus, UartConfig, UartError};
 
-use crate::{Case, CaseRequest, Expected, GapKind, Stimulus, DUT_UNIT};
+use crate::{pattern, Case, CaseRequest, Expected, GapKind, Stimulus, DUT_UNIT};
 
 // ---------------------------------------------------------------------------
 // Wire oracle plumbing
@@ -667,4 +668,109 @@ fn run_case(cfg: &SuiteConfig, case: &Case, dut: Box<dyn Actor>) -> CaseOutcome 
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Envelope containment: the sim-explored hull
+// ---------------------------------------------------------------------------
+
+/// A fixed read/write/readback script against the reference slave — enough
+/// traffic to exercise every RTU timing clause once per seed.
+fn envelope_script() -> Vec<Txn> {
+    vec![
+        Txn {
+            unit: DUT_UNIT,
+            request: OwnedRequest::ReadHolding { addr: 64, count: 8 },
+            verify: Verify::Pattern { addr: 64 },
+            needs_prev_ok: false,
+        },
+        Txn {
+            unit: DUT_UNIT,
+            request: OwnedRequest::WriteSingle {
+                addr: 10,
+                value: 0xBEEF,
+            },
+            verify: Verify::None,
+            needs_prev_ok: false,
+        },
+        Txn {
+            unit: DUT_UNIT,
+            request: OwnedRequest::ReadHolding { addr: 10, count: 1 },
+            verify: Verify::Values(vec![0xBEEF]),
+            needs_prev_ok: true,
+        },
+    ]
+}
+
+/// Run the reference master against the reference slave for one seed and
+/// fold every RTU timing measurement — passing or not — into an
+/// [`EnvelopeAccumulator`]. This is the simulator side of envelope
+/// containment: the hull of timing values StableHAL's own DST loop actually
+/// exercised, to compare against a hardware-measured hull later.
+///
+/// Capacity 8 covers the 4 timing clauses `RtuContract` currently measures
+/// (T3.5, T1.5, master-wait, response-time) with headroom.
+pub fn sim_envelope(cfg: &SuiteConfig) -> (Result<(), String>, EnvelopeAccumulator<8>) {
+    let timing = cfg.timing;
+    let mut mcfg = MasterConfig::new(timing);
+    mcfg.skip_pre_tx_silence = false;
+    let (master, outcome) = ScriptedMaster::new(mcfg, envelope_script(), pattern);
+
+    let slave = SlaveActor::new(
+        SlaveConfig {
+            unit: DUT_UNIT,
+            timing,
+            response_delay: Nanos::from_millis(1),
+            bugs: SlaveBugs::default(),
+        },
+        RegisterBank::with_pattern(pattern),
+    );
+
+    let mut sim = Sim::new(
+        SimConfig::new(cfg.seed, cfg.uart),
+        Box::new(master),
+        Box::new(slave),
+    );
+    let run_result = sim
+        .run_until(Nanos::from_secs(60))
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+
+    let wire_trace = sim.trace();
+    let mut rtu_events: Vec<stablehal_contract::TraceEvent<RtuEvent>> =
+        Vec::with_capacity(wire_trace.len() + 1);
+    for ev in wire_trace {
+        let dir = if ev.event.0 == 0 {
+            Dir::MasterToSlave
+        } else {
+            Dir::SlaveToMaster
+        };
+        let mapped = match ev.event.1 {
+            LineEvent::TxStart { byte } => Some(RtuEvent::CharStart { dir, byte }),
+            LineEvent::TxEnd { byte } => Some(RtuEvent::CharEnd { dir, byte }),
+            _ => None,
+        };
+        if let Some(event) = mapped {
+            rtu_events.push(stablehal_contract::TraceEvent { at: ev.at, event });
+        }
+    }
+    let end_at = sim.now() + timing.t35.mul_ratio(4, 1) + Nanos::from_millis(1);
+    rtu_events.push(stablehal_contract::TraceEvent {
+        at: end_at,
+        event: RtuEvent::EndOfObservation,
+    });
+
+    let contract = RtuContract::new(timing);
+    let (verdict, acc) = check_trace_measured(contract, &rtu_events);
+    let judged = match verdict {
+        stablehal_contract::Verdict::Conforming { .. } => run_result,
+        stablehal_contract::Verdict::Violated(v) => Err(format!("{v}")),
+    };
+    let out = outcome.borrow();
+    let judged = if !out.property_failures.is_empty() {
+        Err(format!("property failures: {:?}", out.property_failures))
+    } else {
+        judged
+    };
+    (judged, acc)
 }

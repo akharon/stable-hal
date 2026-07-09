@@ -18,12 +18,14 @@
 #![deny(unsafe_code)]
 
 pub mod clause;
+pub mod measure;
 pub mod oracle;
 pub mod prng;
 pub mod time;
 pub mod trace;
 
 pub use clause::Clause;
+pub use measure::{ClauseHull, EnvelopeAccumulator, Measurement};
 pub use oracle::{Breach, Contract, Oracle, Verdict, Violation};
 pub use prng::SplitMix64;
 pub use time::{Nanos, TimeBound};

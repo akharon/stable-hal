@@ -89,9 +89,11 @@ dependencies = [
 name = "stablehal-certify"
 version = "0.1.0"
 dependencies = [
+ "stablehal-conformance",
  "stablehal-contract",
  "stablehal-modbus",
  "stablehal-shc1",
+ "stablehal-sim",
  "stablehal-uart",
 ]
 

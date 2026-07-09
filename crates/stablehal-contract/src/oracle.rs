@@ -6,6 +6,7 @@
 use core::fmt;
 
 use crate::clause::Clause;
+use crate::measure::{EnvelopeAccumulator, Measurement};
 use crate::time::{Nanos, TimeBound};
 use crate::trace::TraceEvent;
 
@@ -49,6 +50,23 @@ pub trait Contract {
     /// Every clause this contract can enforce. Conformance generation and
     /// coverage reporting enumerate this list.
     fn clauses(&self) -> &'static [&'static Clause];
+
+    /// Like [`Contract::step`], but also reports every timing duration it
+    /// computes — passing or not — to `sink`, for envelope-containment
+    /// accounting. Default delegates to `step` with no measurements, so
+    /// existing contracts keep compiling; a contract opts in by overriding
+    /// this and having `step` delegate to it (single judging path, no
+    /// drift between the two).
+    fn step_measured(
+        &self,
+        state: &mut Self::State,
+        at: Nanos,
+        event: &Self::Event,
+        sink: &mut dyn FnMut(Measurement),
+    ) -> Result<(), Breach> {
+        let _ = sink;
+        self.step(state, at, event)
+    }
 }
 
 /// A violation verdict: the breach plus where in the trace it happened.
@@ -145,4 +163,30 @@ pub fn check_trace<C: Contract>(contract: C, trace: &[TraceEvent<C::Event>]) -> 
     Verdict::Conforming {
         steps: oracle.steps(),
     }
+}
+
+/// Like [`check_trace`], but also folds every timing measurement the
+/// contract reports into an [`EnvelopeAccumulator`] — the observed hull for
+/// this trace. Judging still halts at the first violation, same as
+/// `check_trace`; the accumulator reflects whatever was observed up to that
+/// point.
+pub fn check_trace_measured<C: Contract, const N: usize>(
+    contract: C,
+    trace: &[TraceEvent<C::Event>],
+) -> (Verdict<C::Event>, EnvelopeAccumulator<N>) {
+    let mut state = contract.initial();
+    let mut acc: EnvelopeAccumulator<N> = EnvelopeAccumulator::new();
+    for (step, ev) in trace.iter().enumerate() {
+        let mut sink = |m: Measurement| acc.observe(m);
+        if let Err(breach) = contract.step_measured(&mut state, ev.at, &ev.event, &mut sink) {
+            let v = Violation {
+                breach,
+                at: ev.at,
+                step,
+                event: ev.event.clone(),
+            };
+            return (Verdict::Violated(v), acc);
+        }
+    }
+    (Verdict::Conforming { steps: trace.len() }, acc)
 }

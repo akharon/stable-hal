@@ -13,6 +13,7 @@
 
 use core::mem;
 
+use stablehal_contract::measure::Measurement;
 use stablehal_contract::{Breach, Clause, Contract, Nanos, TimeBound};
 
 use crate::crc;
@@ -195,7 +196,10 @@ pub struct RtuState {
 
 impl RtuContract {
     /// Gap/protocol checks when a new frame's first character starts at `at`
-    /// after `gap` of silence, then open the frame.
+    /// after `gap` of silence, then open the frame. Every timing duration
+    /// this computes is reported to `sink` before the bound check, so a
+    /// passing (or waived) measurement still contributes to the envelope
+    /// hull — not just the ones that breach.
     fn start_frame(
         &self,
         state: &mut RtuState,
@@ -203,7 +207,12 @@ impl RtuContract {
         gap: Nanos,
         dir: Dir,
         byte: u8,
+        sink: &mut dyn FnMut(Measurement),
     ) -> Result<(), Breach> {
+        sink(Measurement {
+            clause_id: CL_RTU_T35_FRAME.id,
+            value: gap,
+        });
         if gap < self.timing.t35 {
             self.fail(
                 dir,
@@ -214,6 +223,10 @@ impl RtuContract {
             (Dir::MasterToSlave, Proto::ExpectRequest) => {}
             (Dir::MasterToSlave, Proto::AwaitResponse { request_end, .. }) => {
                 let waited = at.saturating_sub(*request_end);
+                sink(Measurement {
+                    clause_id: CL_RTU_MASTER_WAIT.id,
+                    value: waited,
+                });
                 if waited < self.timing.response_timeout {
                     self.fail(
                         Dir::MasterToSlave,
@@ -233,6 +246,10 @@ impl RtuContract {
             }
             (Dir::SlaveToMaster, Proto::AwaitResponse { request_end, .. }) => {
                 let delay = at.saturating_sub(*request_end);
+                sink(Measurement {
+                    clause_id: CL_RTU_RESP_TIME.id,
+                    value: delay,
+                });
                 let envelope = self.timing.response_envelope();
                 if !envelope.contains(delay) {
                     self.fail(
@@ -329,13 +346,23 @@ impl Contract for RtuContract {
     }
 
     fn step(&self, state: &mut RtuState, at: Nanos, event: &RtuEvent) -> Result<(), Breach> {
+        self.step_measured(state, at, event, &mut |_| {})
+    }
+
+    fn step_measured(
+        &self,
+        state: &mut RtuState,
+        at: Nanos,
+        event: &RtuEvent,
+        sink: &mut dyn FnMut(Measurement),
+    ) -> Result<(), Breach> {
         match *event {
             RtuEvent::CharStart { dir, byte } => {
                 let phase = mem::replace(&mut state.line, LinePhase::Silent { since: at });
                 match phase {
                     LinePhase::Silent { since } => {
                         let gap = at.saturating_sub(since);
-                        self.start_frame(state, at, gap, dir, byte)
+                        self.start_frame(state, at, gap, dir, byte, sink)
                     }
                     LinePhase::InFrame {
                         dir: fdir,
@@ -350,14 +377,14 @@ impl Contract for RtuContract {
                             self.fail(dir, Breach::of(&CL_RTU_CHAR_OVERLAP))?;
                             // Waived: drop the frame as noise and start over.
                             state.line = LinePhase::Silent { since: at };
-                            return self.start_frame(state, at, Nanos::ZERO, dir, byte);
+                            return self.start_frame(state, at, Nanos::ZERO, dir, byte, sink);
                         }
                         let gap = at.saturating_sub(last_char_end);
                         if gap >= self.timing.t35 {
                             // Silence closed the previous frame; judge it,
                             // then open the new one.
                             self.finalize_frame(state, fdir, &frame, last_char_end, poisoned)?;
-                            self.start_frame(state, at, gap, dir, byte)
+                            self.start_frame(state, at, gap, dir, byte, sink)
                         } else if dir != fdir {
                             // Direction change without frame separation: the
                             // newcomer barged in.
@@ -381,6 +408,10 @@ impl Contract for RtuContract {
                             Ok(())
                         } else {
                             let mut poisoned = poisoned;
+                            sink(Measurement {
+                                clause_id: CL_RTU_T15_INTRA.id,
+                                value: gap,
+                            });
                             if gap > self.timing.t15 {
                                 self.fail(
                                     dir,
@@ -442,5 +473,119 @@ impl Contract for RtuContract {
 
     fn clauses(&self) -> &'static [&'static Clause] {
         &RTU_CLAUSES
+    }
+}
+
+#[cfg(test)]
+mod measure_tests {
+    use super::*;
+    use stablehal_contract::EnvelopeAccumulator;
+
+    // 11:03 read-holding, addr 0, qty 1, CRC 0x9a86 (low byte first).
+    const REQUEST: [u8; 8] = [0x11, 0x03, 0x00, 0x00, 0x00, 0x01, 0x86, 0x9a];
+    // 11:03, byte count 2, data 0x0005, CRC 0x84b9 (low byte first).
+    const RESPONSE: [u8; 7] = [0x11, 0x03, 0x02, 0x00, 0x05, 0xb9, 0x84];
+
+    fn timing() -> RtuTiming {
+        RtuTiming::from_uart(
+            &stablehal_uart::UartConfig::rtu_default(9600),
+            Nanos::from_millis(50),
+        )
+    }
+
+    /// Feed one request/response transaction with legal, mid-envelope gaps,
+    /// driving `step_measured` directly to inspect what it reports.
+    fn drive_conforming_transaction(
+        contract: &RtuContract,
+        sink: &mut dyn FnMut(Measurement),
+    ) -> RtuState {
+        let mut state = contract.initial();
+        let mut at = Nanos::from_millis(10);
+        let step_char = |at: &mut Nanos,
+                         dir: Dir,
+                         byte: u8,
+                         contract: &RtuContract,
+                         state: &mut RtuState,
+                         sink: &mut dyn FnMut(Measurement)| {
+            contract
+                .step_measured(state, *at, &RtuEvent::CharStart { dir, byte }, sink)
+                .unwrap();
+            *at += contract.timing.char_time;
+            contract
+                .step_measured(state, *at, &RtuEvent::CharEnd { dir, byte }, sink)
+                .unwrap();
+        };
+        for &b in &REQUEST {
+            step_char(&mut at, Dir::MasterToSlave, b, contract, &mut state, sink);
+        }
+        at += contract.timing.t35 + Nanos::from_micros(10);
+        for &b in &RESPONSE {
+            step_char(&mut at, Dir::SlaveToMaster, b, contract, &mut state, sink);
+        }
+        contract
+            .step_measured(&mut state, at, &RtuEvent::EndOfObservation, sink)
+            .unwrap();
+        state
+    }
+
+    #[test]
+    fn step_and_step_measured_agree_on_a_conforming_trace() {
+        let contract = RtuContract::new(timing());
+        let mut via_step = contract.initial();
+        let mut via_measured = contract.initial();
+        let mut at = Nanos::from_millis(10);
+
+        for &b in &REQUEST {
+            let ev_start = RtuEvent::CharStart {
+                dir: Dir::MasterToSlave,
+                byte: b,
+            };
+            contract.step(&mut via_step, at, &ev_start).unwrap();
+            contract
+                .step_measured(&mut via_measured, at, &ev_start, &mut |_| {})
+                .unwrap();
+            at += contract.timing.char_time;
+            let ev_end = RtuEvent::CharEnd {
+                dir: Dir::MasterToSlave,
+                byte: b,
+            };
+            contract.step(&mut via_step, at, &ev_end).unwrap();
+            contract
+                .step_measured(&mut via_measured, at, &ev_end, &mut |_| {})
+                .unwrap();
+        }
+        // no_std: compare via a Debug-driven hash rather than `format!`.
+        use core::fmt::Write as _;
+        let mut a = stablehal_contract::trace::HashWriter::new();
+        let mut b = stablehal_contract::trace::HashWriter::new();
+        write!(a, "{via_step:?}").unwrap();
+        write!(b, "{via_measured:?}").unwrap();
+        assert_eq!(a.finish(), b.finish());
+    }
+
+    #[test]
+    fn measured_gaps_are_reported_even_when_conforming() {
+        let contract = RtuContract::new(timing());
+        let mut acc: EnvelopeAccumulator<8> = EnvelopeAccumulator::new();
+        let mut sink = |m: Measurement| acc.observe(m);
+        drive_conforming_transaction(&contract, &mut sink);
+
+        // T3.5 was measured at least once: the gap before the response.
+        let t35 = acc.hull_for(CL_RTU_T35_FRAME.id).expect("T3.5 measured");
+        assert!(t35.samples >= 1);
+        assert!(t35.min >= contract.timing.t35);
+
+        // T1.5 (intra-frame gaps) measured many times — one per interior byte.
+        let t15 = acc.hull_for(CL_RTU_T15_INTRA.id).expect("T1.5 measured");
+        assert!(t15.samples > 0);
+        assert!(t15.max <= contract.timing.t15);
+
+        // Response start delay was measured and falls inside the envelope.
+        let resp = acc
+            .hull_for(CL_RTU_RESP_TIME.id)
+            .expect("resp time measured");
+        let envelope = contract.timing.response_envelope();
+        assert!(envelope.contains(resp.min));
+        assert!(envelope.contains(resp.max));
     }
 }
