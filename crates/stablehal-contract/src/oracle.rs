@@ -99,6 +99,40 @@ impl<E: Clone + fmt::Debug> fmt::Display for Violation<E> {
 
 /// Online monitor over one contract. Feed it events as they happen (in the
 /// simulator, or from a capture on target); it halts at the first violation.
+///
+/// # Example
+///
+/// A one-clause contract that forbids a second `Ping` before a `Pong` is
+/// observed, judged event-by-event:
+///
+/// ```
+/// use stablehal_contract::{Breach, Clause, Contract, Nanos, Oracle};
+///
+/// static CL: Clause = Clause { id: "NO-DOUBLE-PING", citation: "-", text: "-" };
+/// static CLAUSES: [&Clause; 1] = [&CL];
+///
+/// #[derive(Clone, Debug)]
+/// enum Event { Ping, Pong }
+///
+/// struct OneAtATime;
+/// impl Contract for OneAtATime {
+///     type State = bool; // awaiting a Pong?
+///     type Event = Event;
+///     fn initial(&self) -> bool { false }
+///     fn step(&self, waiting: &mut bool, _at: Nanos, event: &Event) -> Result<(), Breach> {
+///         match (event, *waiting) {
+///             (Event::Ping, true) => Err(Breach::of(&CL)),
+///             (Event::Ping, false) => { *waiting = true; Ok(()) }
+///             (Event::Pong, _) => { *waiting = false; Ok(()) }
+///         }
+///     }
+///     fn clauses(&self) -> &'static [&'static Clause] { &CLAUSES }
+/// }
+///
+/// let mut oracle = Oracle::new(OneAtATime);
+/// assert!(oracle.observe(Nanos::ZERO, &Event::Ping).is_ok());
+/// assert!(oracle.observe(Nanos::ZERO, &Event::Ping).is_err()); // no Pong in between
+/// ```
 pub struct Oracle<C: Contract> {
     contract: C,
     state: C::State,

@@ -3,6 +3,7 @@ name = "stablehal-contract"
 description = "StableHAL contract kernel: executable HAL contracts, trace oracle, virtual time, deterministic PRNG"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

@@ -14,12 +14,60 @@
 //! conforming by construction: the simulated wire physically cannot emit a
 //! character pattern the [`LineContract`] forbids, and every wire event is
 //! still fed through online oracles so the claim is *checked*, not assumed.
+//!
+//! # Example
+//!
+//! Two toy actors — one that sends a byte, one that echoes it back — driven
+//! to completion, with the same seed replayed to show the trace hash matches
+//! byte-for-byte. See `docs/getting-started.md` for a walkthrough that adds a
+//! contract observer on top of this shape.
+//!
+//! ```
+//! use stablehal_contract::Nanos;
+//! use stablehal_sim::{Actor, NextPoll, Sim, SimConfig, UartPort};
+//! use stablehal_uart::{UartBus, UartConfig};
+//!
+//! const UART: UartConfig = UartConfig::rtu_default(9600);
+//!
+//! struct Sender { sent: bool }
+//! impl Actor for Sender {
+//!     fn poll(&mut self, now: Nanos, port: &mut UartPort<'_>) -> NextPoll {
+//!         if self.sent {
+//!             return NextPoll::Done;
+//!         }
+//!         match port.try_write(0x48) {
+//!             Ok(()) => { self.sent = true; NextPoll::Done }
+//!             Err(_) => NextPoll::At(now + UART.char_time()),
+//!         }
+//!     }
+//! }
+//!
+//! struct Echoer;
+//! impl Actor for Echoer {
+//!     fn poll(&mut self, _now: Nanos, port: &mut UartPort<'_>) -> NextPoll {
+//!         while let Some(Ok(_byte)) = port.try_read() {
+//!             let _ = port.try_write(0xEE);
+//!         }
+//!         NextPoll::OnRx
+//!     }
+//! }
+//!
+//! let run = |seed| {
+//!     let mut sim = Sim::new(SimConfig::new(seed, UART), Box::new(Sender { sent: false }), Box::new(Echoer));
+//!     sim.run_until(Nanos::from_millis(10)).unwrap();
+//!     sim.trace_hash()
+//! };
+//!
+//! assert_eq!(run(42), run(42)); // same seed ⇒ same hash, always
+//! ```
 
 #![deny(unsafe_code)]
 
+pub mod can;
 pub mod i2c;
 pub mod lin;
 mod sched;
+pub mod spi;
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -59,6 +107,24 @@ impl SimConfig {
             corrupt_ppm: 0,
             boundary_bias: false,
         }
+    }
+
+    /// Builder-style alternative to setting `latency` after `new`.
+    pub fn with_latency(mut self, latency: TimeBound) -> Self {
+        self.latency = latency;
+        self
+    }
+
+    /// Builder-style alternative to setting `corrupt_ppm` after `new`.
+    pub fn with_corrupt_ppm(mut self, ppm: u32) -> Self {
+        self.corrupt_ppm = ppm;
+        self
+    }
+
+    /// Builder-style alternative to setting `boundary_bias` after `new`.
+    pub fn with_boundary_bias(mut self, bias: bool) -> Self {
+        self.boundary_bias = bias;
+        self
     }
 }
 
@@ -282,13 +348,18 @@ impl Sim {
             self.actors[i].poll(now, &mut port)
         };
         // Turn staged writes into wire events. `try_write` allows at most one
-        // pending character, so at most one byte is staged per poll.
-        let staged: Vec<u8> = self.staged_tx.drain(..).collect();
-        for byte in staged {
+        // pending character, so at most one byte is staged per poll. Move the
+        // buffer out (an empty `Vec` allocates nothing) so `emit` can borrow
+        // `self`, then hand the same allocation back — no per-poll heap churn
+        // in the hot sweep path.
+        let mut staged = std::mem::take(&mut self.staged_tx);
+        for &byte in &staged {
             self.emit(i, LineEvent::TxStart { byte })?;
             self.sched
                 .schedule(now + self.char_time, Job::TxEnd { line: i, byte });
         }
+        staged.clear();
+        self.staged_tx = staged;
         match next {
             NextPoll::At(t) => {
                 self.sched.schedule(t, Job::Poll(i));

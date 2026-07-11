@@ -86,8 +86,9 @@ over-lenient ones (accepting torn frames).
 
 1. Adapt it behind the HAL: implement `stablehal_sim::Actor` by polling your
    stack and exchanging bytes through the provided `UartPort` (which
-   implements `UartBus`). See `SlaveActor` for the shape; a third-party-crate
-   adapter is specified in [design-spec-next.md §1](design-spec-next.md).
+   implements `UartBus`). See `SlaveActor` for the shape; a worked
+   third-party-crate adapter lives in
+   [adapters/rmodbus-slave/](../adapters/rmodbus-slave/).
 2. Ensure the precondition (unit 0x11, pattern registers).
 3. `run_suite(&cfg, STANDARD_SUITE, factory)` — all-pass = certified against
    contract v0.1 at 9600-8E1/50 ms. Re-run at your deployment baud/timeout.
@@ -118,5 +119,5 @@ over-lenient ones (accepting torn frames).
 * Broadcast (unit 0) and FCs outside 03/06/10 are out of subset — requests
   are still *sent* correctly by the tester (UNKNOWN-FC), but no
   broadcast-turnaround cases exist yet.
-* One DUT per bus; multi-drop topologies await the Medium abstraction
-  ([design-spec-next.md §2](design-spec-next.md)).
+* One DUT per bus; multi-drop topologies use a separate per-protocol world
+  (`I2cWorld`/`LinWorld`), not the 2-device UART `Sim` (architecture.md T4).

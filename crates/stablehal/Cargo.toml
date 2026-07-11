@@ -1,0 +1,31 @@
+[package]
+name = "stablehal"
+description = "Facade: one dependency + one prelude for the StableHAL workspace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["sim", "modbus", "conformance"]
+sim = ["dep:stablehal-sim"]
+modbus = ["dep:stablehal-modbus"]
+i2c = ["dep:stablehal-i2c"]
+lin = ["dep:stablehal-lin"]
+spi = ["dep:stablehal-spi"]
+can = ["dep:stablehal-can"]
+shc1 = ["dep:stablehal-shc1"]
+conformance = ["sim", "dep:stablehal-conformance"]
+
+[dependencies]
+stablehal-contract = { workspace = true }
+stablehal-uart = { workspace = true }
+stablehal-sim = { workspace = true, optional = true }
+stablehal-modbus = { workspace = true, optional = true }
+stablehal-i2c = { workspace = true, optional = true }
+stablehal-lin = { workspace = true, optional = true }
+stablehal-spi = { workspace = true, optional = true }
+stablehal-can = { workspace = true, optional = true }
+stablehal-shc1 = { workspace = true, optional = true }
+stablehal-conformance = { workspace = true, optional = true, features = ["runner"] }

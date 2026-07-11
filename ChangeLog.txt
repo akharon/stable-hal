@@ -4,6 +4,122 @@ Format: date — version — changes. Newest first.
 Semantics: "contract version" changes are called out explicitly, because they
 invalidate previously issued conformance certificates.
 
+2026-07-11 — 0.1.0 — T10/T11/T8: LIN suite, envelope containment for I2C/LIN,
+SPI + CAN closed-loop pilots (no MODBUS contract change)
+------------------------------------------------------------
+Added (risk T10 — LIN conformance suite):
+  * `stablehal_conformance::lin` (`mod.rs` + `runner.rs`, `stablehal-lin` now
+    a dependency of `stablehal-conformance`): 4-case `STANDARD_SUITE`
+    covering LIN-CHECKSUM, LIN-FRAME-MAXLEN, LIN-INTERBYTE-MAX,
+    LIN-SLAVE-SILENCE (LIN-BREAK/BREAK-DELIM/SYNC/PID-PARITY are generated
+    conforming-by-construction on every slot, same treatment as I2C's
+    BUS-FREE/BYTE-TIME; LIN-ONE-RESPONSE needs two publishers contending for
+    one slot, unreachable from this reference world's single-first-match
+    wiring). `tests/lin_closed_loop.rs`.
+Added (risk T11 — envelope containment for I2C/LIN):
+  * `I2cContract`/`LinContract` now implement `step_measured` (previously
+    only `RtuContract` did): `step` inverted to delegate to `step_measured`
+    with a no-op sink, mirroring `RtuContract` exactly. I2C measures
+    I2C-BUS-FREE and I2C-STRETCH-MAX (the only two clauses actually judged
+    inside `step`; I2C-BYTE-TIME/I2C-READ-NACK-LAST are judged by the
+    harness outside the trait's `step` path and stay out of scope). LIN
+    measures LIN-BREAK, LIN-BREAK-DELIM, LIN-INTERBYTE-MAX, LIN-FRAME-MAXLEN.
+  * `sim_envelope` in `stablehal_conformance::i2c::runner` and `::lin::runner`
+    (mirrors the existing MODBUS `sim_envelope`), plus
+    `tests/i2c_envelope.rs` / `tests/lin_envelope.rs`.
+Fixed (found while building the T11 envelope tests):
+  * `I2cMasterAdapter::poll` / `LinMasterAdapter::poll` in `stablehal-sim`
+    only advanced their inner scripted driver by one phase-transition per
+    tick, so a script step following a `stop: true` op (I2C) or a schedule
+    slot (LIN) never got a chance to submit — the world silently stalled
+    after the *first* op/slot of any multi-step script, with no scheduled
+    event left to wake it. Existing tests didn't catch this because they
+    only assert "no contract violation", not "the script completed" (data
+    correctness for WRITE-READBACK-style cases was checked by hitting the
+    device directly, bypassing the world). Fixed by draining every
+    transition available per tick (`while self.inner.step(port) {}`).
+    Behavior-neutral for the MODBUS `Sim` engine (untouched); changes
+    I2C/LIN trace content (more events now emitted per multi-step script)
+    but no existing test pinned a literal hash constant for either.
+Added (risk T8 — close the DST loop for SPI and CAN):
+  * `stablehal-spi` split into `contract.rs`/`device.rs`/`master.rs`
+    (was a single ~640-line file): added `SpiSlaveBugs` (`wrong_read_data`,
+    non-breaching — CS timing/mode/transfer-timing clauses have no
+    device-side hook in SPI's fully-synchronous model, documented in the
+    crate-level doc comment) and `ScriptedSpiMaster` (mirrors
+    `stablehal_i2c::ScriptedMaster`).
+  * `stablehal_sim::spi::SpiWorld` (1 master, N chip-selected slaves,
+    CsAssert -> ByteXfer* -> CsDeAssert, `cs_idle_min` deferred-CsAssert
+    mirroring I2C's deferred-Start). `tests/spi_dst.rs`.
+    `stablehal_conformance::spi` (3-case suite covering SPI-TRANSACTION,
+    SPI-CS-TIMING, SPI-MODE-DISC, SPI-XFER-TIME, SPI-CS-MIN-IDLE;
+    SPI-MODE-FAULT/SPI-DATA-VALID excluded — SPI-DATA-VALID is vestigial,
+    declared but never checked in `step`). `tests/spi_closed_loop.rs`.
+  * `stablehal-can` split into `contract.rs`/`node.rs`: new
+    `node::CanNodeActor` trait modeling CAN's genuinely different broadcast
+    topology (no master/slave — any node offers a frame, every other node
+    ACKs), `CanNodeBugs` (`silent_no_ack` — wire-breaching, since the
+    reference responder is the sole other node on the bus, so its ACK is
+    the only possible one; `wrong_response_data`/`silent_no_response` —
+    non-breaching, the request/response pattern is an application-level
+    convention `CanRegisterNode` layers on top of the raw contract, not
+    part of it), `CanScriptedNode` (tester), `CanRegisterNode` (responder).
+  * `stablehal_sim::can::CanWorld`: `nodes: Vec<Box<dyn CanNodeActor>>`
+    polled every bus-idle tick; arbitration winner is the lowest `CanId`
+    (`Ord` derived so Standard beats Extended, smaller numeric id wins — a
+    documented simplification of real bit-level arbitration). Frame
+    duration is an approximated, seed-jittered bit-count estimate (+20%
+    stuffing margin) since exact stuffed length isn't modeled at frame
+    granularity. `tests/can_dst.rs`. `stablehal_conformance::can` (3-case
+    suite covering CAN-ID-FIELD, CAN-RTR-DISC, CAN-ACK — the only clauses
+    reachable through a `CanEvent::Frame` observation in a conforming run;
+    CAN-FRAME-START is never checked in `step` at all, and
+    CAN-EOF/CAN-CRC/CAN-ERROR-FRAME/CAN-OVERLOAD/CAN-BIT-STUFFING need
+    bus-monitor-level events this reference world never emits).
+    `tests/can_closed_loop.rs`.
+Docs:
+  * `next_steps.md`: items 2/3/4 (T10/T8/T11) moved from "Open backlog" to
+    "Done"; item 5 updated — façade crate (`crates/stablehal`) and CI
+    (`.github/workflows/ci.yml`) were already shipped in a prior session,
+    corrected here; crates.io publishing remains the one open idea,
+    deliberately not started (needs separate sign-off).
+  * `docs/architecture.md`: §3.2 moves SPI/CAN into the closed-loop-pilots
+    list; ADR-10/ADR-11 status notes updated; §11 risk register T8/T10/T11
+    marked resolved; §13.2 golden values gain the new SPI/CAN DST hashes.
+  * New `docs/user-guide-spi.md`, `docs/user-guide-can.md`.
+Contract versions: unchanged (no clause text/id changed on any existing
+contract; `I2cContract`/`LinContract`/`SpiContract`/`CanContract` gained
+`step_measured`/reference-driver code around themselves, not new clauses).
+MODBUS golden trace hash `95f0e863d22deaa9` confirmed unchanged.
+
+2026-07-10 — 0.1.0 — Docs consolidation + review-finding fixes (no contract change)
+------------------------------------------------------------
+Docs:
+  * Removed docs/design-spec-next.md (a "specification only — nothing below
+    is implemented" doc whose WP1–WP3 are now implemented and covered by
+    architecture.md + the code) and docs/analysis.md (market/business
+    strategy — out of scope for the technical doc set).
+  * Folded the still-binding content of the removed spec — engineering
+    ground rules G1–G5, golden values, and the contract/certificate
+    registry — into a new architecture.md §13 as the single source of truth.
+    Redirected all references (README, user guides, next_steps, rmodbus
+    adapter doc comment) away from the removed docs.
+  * Rewrote README.md: accurate workspace table (all 14 crates/tools/
+    adapters, previously listed 5), an "integrate in three paths" on-ramp,
+    corrected status/roadmap (I2C/LIN/SHC1/containment shipped, not pending).
+  * Slimmed next_steps.md to a self-contained open backlog (hardware
+    bring-up, LIN suite, SPI/CAN loop closure, containment extension) with
+    no dependency on the removed spec doc.
+Fixed (implementation review):
+  * `SplitMix64` reference-vector test now pins the *actual* canonical
+    seed-0 output sequence (0xe220a8397b1dcdaf, …) instead of only checking
+    self-consistency — the load-bearing determinism claim now fails loudly
+    if the PRNG constants or mixing ever drift. Golden value recorded in
+    architecture.md §13.2.
+  * `Sim::poll_actor` no longer allocates a fresh `Vec` per poll to drain
+    staged TX bytes; it reuses one buffer via `mem::take`. Behavior-neutral —
+    `--replay-check 4242` still hashes `95f0e863d22deaa9`.
+
 2026-07-08 — 0.1.0 — T7: RP2040 target firmware drafted (WP3.3, UNVERIFIED)
 ------------------------------------------------------------
 Added:

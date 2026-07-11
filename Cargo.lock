@@ -35,6 +35,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
+name = "hello-sim"
+version = "0.1.0"
+dependencies = [
+ "stablehal",
+]
+
+[[package]]
 name = "ieee754"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -79,6 +86,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "stablehal"
+version = "0.1.0"
+dependencies = [
+ "stablehal-can",
+ "stablehal-conformance",
+ "stablehal-contract",
+ "stablehal-i2c",
+ "stablehal-lin",
+ "stablehal-modbus",
+ "stablehal-shc1",
+ "stablehal-sim",
+ "stablehal-spi",
+ "stablehal-uart",
+]
+
+[[package]]
 name = "stablehal-can"
 version = "0.1.0"
 dependencies = [
@@ -101,10 +124,13 @@ dependencies = [
 name = "stablehal-conformance"
 version = "0.1.0"
 dependencies = [
+ "stablehal-can",
  "stablehal-contract",
  "stablehal-i2c",
+ "stablehal-lin",
  "stablehal-modbus",
  "stablehal-sim",
+ "stablehal-spi",
  "stablehal-uart",
 ]
 
@@ -163,9 +189,11 @@ dependencies = [
 name = "stablehal-sim"
 version = "0.1.0"
 dependencies = [
+ "stablehal-can",
  "stablehal-contract",
  "stablehal-i2c",
  "stablehal-lin",
+ "stablehal-spi",
  "stablehal-uart",
 ]
 

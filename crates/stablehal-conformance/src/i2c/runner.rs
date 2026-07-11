@@ -3,8 +3,11 @@
 //! as DUT, scripting the exact stimulus each case needs and checking both
 //! wire-contract conformance and (where relevant) data correctness.
 
-use stablehal_contract::Nanos;
-use stablehal_i2c::{I2cSlaveBugs, I2cTiming, RegisterPointerDevice, ScriptedMaster, Step};
+use stablehal_contract::oracle::check_trace_measured;
+use stablehal_contract::{EnvelopeAccumulator, Nanos, Verdict};
+use stablehal_i2c::{
+    I2cContract, I2cSlaveBugs, I2cTiming, RegisterPointerDevice, ScriptedMaster, Step,
+};
 use stablehal_sim::i2c::{I2cMasterAdapter, I2cWorld, I2cWorldConfig};
 
 use super::{Case, DUT_ADDR, OTHER_ADDR, STANDARD_SUITE};
@@ -191,4 +194,62 @@ pub fn run_suite(suite: &[Case]) -> Report {
 
 pub fn run_standard_suite() -> Report {
     run_suite(STANDARD_SUITE)
+}
+
+/// Run the reference master against the reference device for one seed and
+/// fold every I2C timing measurement — passing or not — into an
+/// [`EnvelopeAccumulator`] (risk T11 / ADR-11, mirroring
+/// `stablehal_conformance::runner::sim_envelope` for MODBUS). The script
+/// spans two transactions separated by a Stop (so `I2C-BUS-FREE` is
+/// measured) and stretches every byte just under the cap (so
+/// `I2C-STRETCH-MAX` is measured). `I2C-BYTE-TIME` and `I2C-READ-NACK-LAST`
+/// are judged by the harness outside `Contract::step` (see the comment on
+/// `I2cContract::check_read_ack`/`check_byte_duration`) and are not part of
+/// this trait-based hull yet.
+///
+/// Capacity 4 covers the 2 timing clauses `I2cContract` currently measures
+/// through `step_measured` (I2C-BUS-FREE, I2C-STRETCH-MAX) with headroom.
+pub fn sim_envelope(seed: u64) -> (Result<(), String>, EnvelopeAccumulator<4>) {
+    const SCRIPT: &[Step] = &[
+        Step::Write {
+            addr7: DUT_ADDR,
+            bytes: &[0x00, 0xAA],
+            stop: true,
+        },
+        Step::Write {
+            addr7: DUT_ADDR,
+            bytes: &[0x00],
+            stop: false,
+        },
+        Step::Read {
+            addr7: DUT_ADDR,
+            len: 1,
+            stop: true,
+        },
+    ];
+    let timing = I2cTiming::standard();
+    let bugs = I2cSlaveBugs {
+        stretch_over_cap: Some(timing.stretch_max.saturating_sub(Nanos::from_micros(1))),
+        ..I2cSlaveBugs::default()
+    };
+
+    let master = ScriptedMaster::new(SCRIPT);
+    let mut world = I2cWorld::new(
+        I2cWorldConfig::new(seed, timing),
+        Box::new(I2cMasterAdapter::new(master)),
+    );
+    world.add_slave(Box::new(RegisterPointerDevice::with_bugs(DUT_ADDR, bugs)));
+
+    let run_result = world
+        .run_until(DEADLINE)
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+
+    let contract = I2cContract::new(timing, &[DUT_ADDR]);
+    let (verdict, acc) = check_trace_measured(contract, world.trace());
+    let judged = match verdict {
+        Verdict::Conforming { .. } => run_result,
+        Verdict::Violated(v) => Err(format!("{v}")),
+    };
+    (judged, acc)
 }

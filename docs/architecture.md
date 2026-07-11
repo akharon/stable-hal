@@ -1,6 +1,6 @@
 # StableHAL — Architecture Specification (arc42)
 
-Version 0.1.0 — updated 2026-07-09 — status: MODBUS RTU/I2C/LIN closed-loop pilots implemented (M0–M4, WP2), SPI/CAN contract-only (ADR-10), hardware capture/certify path validated in simulation, envelope containment certification piloted on MODBUS RTU (ADR-11), on-target firmware drafted but unverified (§7.2).
+Version 0.1.0 — updated 2026-07-11 — status: MODBUS RTU/I2C/LIN/SPI/CAN closed-loop pilots implemented (M0–M4, WP2, T8/T10), hardware capture/certify path validated in simulation, envelope containment certification piloted on MODBUS RTU/I2C/LIN (ADR-11, T11), on-target firmware drafted but unverified (§7.2).
 
 This document follows the [arc42](https://arc42.org) template. Code references
 point into this repository; the scientific argument lives in
@@ -26,7 +26,7 @@ StableHAL's requirement set:
 | R3 | The **same oracle** judges simulated traces and hardware captures (`no_std`), closing the SW↔HW loop. |
 | R4 | A **conformance suite** is derived from the contract and can run against simulated and real devices alike. |
 | R5 | Every failure **replays byte-for-byte from its seed**. |
-| R6 | Pilot protocols: MODBUS RTU over UART (FC 03/06/10 subset, unicast) — full closed loop, incl. conformance suite and (simulation-validated) hardware capture path; I2C and LIN — full closed loop, contract + reference driver/device + DST; SPI and CAN — contract-only (ADR-10), closed loop not yet demonstrated. |
+| R6 | Pilot protocols: MODBUS RTU over UART (FC 03/06/10 subset, unicast) — full closed loop, incl. conformance suite and (simulation-validated) hardware capture path; I2C, LIN, SPI, and CAN — full closed loop, contract + reference driver/device + simulator world + DST-verified conformance suite. |
 
 ### 1.2 Quality goals (top 3)
 
@@ -84,17 +84,26 @@ flowchart LR
 **In scope, closed-loop pilots (contract + reference driver/device +
 simulator world + DST closed-loop test):** UART line contract; MODBUS RTU
 (§5.4); I2C transaction contract (§5.1, `docs/user-guide-i2c.md`); LIN
-transaction contract (§5.5, `docs/user-guide-lin.md`, conformance suite not
-yet built — T10). MODBUS additionally has a full conformance-suite runner,
-a validated (simulation-only) hardware capture path
-(`stablehal-shc1` + `tools/stablehal-certify`, §7.2), and an envelope
-containment pilot (ADR-11, `docs/user-guide-containment.md`) proving the
-DST loop actually exercised the timing region a captured trace occupies —
-not just that both sides pass their own contract separately.
+transaction contract (§5.5, `docs/user-guide-lin.md`); SPI wire contract
+(`stablehal-spi`, `docs/user-guide-spi.md`) — `SpiWorld`, `ScriptedSpiMaster`,
+`SpiSlaveBugs`, a 3-case conformance suite, `tests/spi_dst.rs` and
+`tests/spi_closed_loop.rs` (T8); CAN data-link contract (Classic 2.0B,
+`stablehal-can`, `docs/user-guide-can.md`) — `CanWorld`, `CanNodeActor`
+topology (broadcast bus, no master/slave), `CanNodeBugs`, a 3-case
+conformance suite, `tests/can_dst.rs` and `tests/can_closed_loop.rs` (T8).
+MODBUS additionally has a full conformance-suite runner, a validated
+(simulation-only) hardware capture path (`stablehal-shc1` +
+`tools/stablehal-certify`, §7.2), and an envelope containment pilot (ADR-11,
+`docs/user-guide-containment.md`) — also now piloted on I2C and LIN (T11,
+§5.6) — proving the DST loop actually exercised the timing region a
+captured trace occupies, not just that both sides pass their own contract
+separately.
 
-**In scope, contract-only (ADR-10 — clause set + state machine, no closed
-loop yet):** SPI wire contract; CAN data-link contract (Classic 2.0B);
-`embedded-hal` ecosystem bridge for both.
+**ADR-10 (contract-only is a valid intermediate state)** remains accepted
+policy, but no protocol crate in scope is currently in that state: SPI and
+CAN closed the DST loop in T8 (2026-07-11), joining MODBUS/I2C/LIN. The
+`embedded-hal` ecosystem bridge (`stablehal-embedded-hal`, spi/can
+feature-gated) continues to bridge both.
 
 **Out of scope (documented, deliberate):** physical layer (EMI, analog
 margins, silicon errata outside the fault vocabulary); MODBUS broadcast
@@ -129,14 +138,14 @@ flowchart TD
         MODBUS[stablehal-modbus<br>RtuContract, RtuMaster,<br>RtuSlave, pdu, crc, timing]
         I2C[stablehal-i2c<br>I2cContract, ScriptedMaster,<br>RegisterPointerDevice]
         LIN[stablehal-lin<br>LinContract, ScheduleMaster,<br>TableSlave]
-        SPI[stablehal-spi<br>SpiContract only]
-        CAN[stablehal-can<br>CanContract only]
+        SPI[stablehal-spi<br>SpiContract, ScriptedSpiMaster,<br>SpiSlaveBugs]
+        CAN[stablehal-can<br>CanContract, CanNodeActor,<br>CanScriptedNode, CanRegisterNode]
         EHAL[stablehal-embedded-hal<br>embedded-hal bridge, spi/can features]
         SHC1[stablehal-shc1<br>capture stream codec, no_std+alloc]
         CONFCORE[stablehal-conformance core<br>Case / Stimulus / Expected,<br>STANDARD_SUITE, i2c suite]
     end
     subgraph host["host only"]
-        SIM[stablehal-sim<br>Sim engine, i2c::I2cWorld,<br>lin::LinWorld]
+        SIM[stablehal-sim<br>Sim engine, i2c::I2cWorld,<br>lin::LinWorld, spi::SpiWorld,<br>can::CanWorld]
         RUNNER[stablehal-conformance::runner<br>TesterActor, SlaveActor,<br>ScriptedMaster, run_suite]
         EX1[examples/modbus-master<br>DST sweep CLI]
         EX2[examples/buggy-slave<br>closed-loop demo CLI]
@@ -158,6 +167,8 @@ flowchart TD
     SIM --> UART
     SIM --> I2C
     SIM --> LIN
+    SIM --> SPI
+    SIM --> CAN
     CONFCORE --> MODBUS
     RUNNER --> CONFCORE
     RUNNER --> SIM
@@ -194,17 +205,32 @@ master's only recurring obligation is a conforming header on schedule (TDMA
 via a fixed schedule table), while whichever slave owns a frame ID (if any)
 carries a separate, independently-judged obligation to answer correctly.
 See `docs/user-guide-lin.md` for the full walkthrough. Has a closed-loop DST
-test (`crates/stablehal-sim/tests/lin_dst.rs`) but not yet a
-`stablehal_conformance::lin` case suite.
+test (`crates/stablehal-sim/tests/lin_dst.rs`) and, since T10, a
+`stablehal_conformance::lin` case suite (`tests/lin_closed_loop.rs`).
 
-**SPI and CAN (`stablehal-spi`, `stablehal-can`)** are contract-only so far:
-each defines its clause set, event enum, and `Contract` state machine
-(SPI: CS timing/mode discipline/mode-fault, byte granularity; CAN: ISO
-11898-1 Classic 2.0B frame fields, bit-stuffing, CRC, ACK, error frames —
-CAN FD deferred to v2), but neither yet has a reference master/slave driver,
-a `stablehal-sim` world, or a conformance suite — so neither has closed the
-DST loop the way MODBUS/I2C/LIN have. Treat as contract specifications
-awaiting the driver/simulator/suite layers, not yet full pilots.
+**SPI and CAN (`stablehal-spi`, `stablehal-can`)** closed the DST loop in
+T8 (2026-07-11), joining MODBUS/I2C/LIN as full pilots. `stablehal-spi` is
+split into `contract.rs`/`device.rs`/`master.rs`: `SpiContract` (CS
+timing/mode discipline/mode-fault, byte granularity), `ScriptedSpiMaster`,
+`SpiSlaveBugs`, and `stablehal_sim::spi::SpiWorld` (1 master, N
+chip-selected slaves) back a 3-case conformance suite
+(`tests/spi_dst.rs`, `tests/spi_closed_loop.rs`). `stablehal-can` is split
+into `contract.rs`/`node.rs`: `CanContract` (ISO 11898-1 Classic 2.0B frame
+fields, bit-stuffing, CRC, ACK, error frames — CAN FD deferred to v2) plus a
+`node::CanNodeActor` trait modeling CAN's genuinely different broadcast
+topology (no master/slave — any node offers a frame, every other node
+ACKs), `CanNodeBugs`, `CanScriptedNode` (tester), `CanRegisterNode`
+(responder, an application-level convention layered on top of the raw
+contract). `stablehal_sim::can::CanWorld` (arbitration by lowest `CanId`,
+seed-jittered frame duration) backs a 3-case conformance suite
+(`tests/can_dst.rs`, `tests/can_closed_loop.rs`). Some clauses on both
+protocols remain untested through the closed loop because the reference
+world gives no observation hook to breach them (SPI-MODE-FAULT,
+SPI-DATA-VALID — the latter vestigial, declared but never checked in
+`step`; CAN-FRAME-START, CAN-EOF, CAN-CRC, CAN-ERROR-FRAME, CAN-OVERLOAD,
+CAN-BIT-STUFFING, which need bus-monitor-level events this reference world
+never emits) — see the Clause registry below and `docs/user-guide-spi.md`
+/ `docs/user-guide-can.md` for the exact per-clause coverage.
 `stablehal-embedded-hal` bridges StableHAL's contract-aware traits to the
 Rust `embedded-hal` ecosystem (`spi`/`can` feature-gated adapters) so
 existing `embedded-hal` drivers can eventually be exercised under DST.
@@ -216,9 +242,9 @@ existing `embedded-hal` drivers can eventually be exercised under DST.
 | uart-line | 0.1 | 3 | 0x0002 | via modbus-rtu |
 | modbus-rtu | 0.1 | 12 | 0x0001 | yes |
 | i2c | 0.1 | 7 | 0x0003 (reserved) | yes |
-| lin | 0.1 | 9 | unassigned | yes (no conformance suite yet) |
-| spi | — | 7 | unassigned | no (contract only) |
-| can | — | 9 | unassigned | no (contract only) |
+| lin | 0.1 | 9 | unassigned | yes |
+| spi | — | 7 | unassigned | yes |
+| can | — | 9 | unassigned | yes |
 
 modbus-rtu additionally has an envelope containment pilot (§5.6, ADR-11):
 its 4 timing clauses (`RTU-T35-FRAME`, `RTU-T15-INTRA`, `RTU-MASTER-WAIT`,
@@ -448,6 +474,16 @@ CLI: `stablehal-certify sim-envelope --seeds N`, `measure <captures>...`,
 default for compatibility). Full walkthrough and the composition argument
 this closes: `docs/user-guide-containment.md`.
 
+Since T11 (2026-07-11), the same `step_measured` / `EnvelopeAccumulator`
+mechanism is also implemented by `I2cContract` and `LinContract`
+(`step` delegates to `step_measured` with a no-op sink, mirroring
+`RtuContract` exactly), with `sim_envelope` equivalents in
+`stablehal_conformance::i2c::runner` and `::lin::runner`. I2C measures
+`I2C-BUS-FREE`/`I2C-STRETCH-MAX`; LIN measures `LIN-BREAK`,
+`LIN-BREAK-DELIM`, `LIN-INTERBYTE-MAX`, `LIN-FRAME-MAXLEN` — the clauses
+actually judged inside each contract's `step`. SPI/CAN have not yet been
+extended (T11 remains partially open; see §11).
+
 ---
 
 ## 6. Runtime View
@@ -598,8 +634,6 @@ per-byte instrumentation of `Rp2040UartBus`) — captures are framing-valid
 but presently carry no protocol content. See `targets/rp2040/README.md`
 "Status" for the itemized gap list and bring-up plan.
 
-Interface details: [design-spec-next.md §3](design-spec-next.md).
-
 ---
 
 ## 8. Crosscutting Concepts
@@ -646,9 +680,11 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | DST harness self-test | [dst.rs](../crates/stablehal-sim/tests/dst.rs) | Planted envelope-dependent bug found by sweep; exact replay; seed divergence. |
 | Closed loop (MODBUS) | [closed_loop.rs](../crates/stablehal-conformance/tests/closed_loop.rs) | Reference passes suite; 6/6 bug catalog caught with exact clause; master sweep clean; planted master bug caught. |
 | Closed loop (I2C) | [i2c_dst.rs](../crates/stablehal-sim/tests/i2c_dst.rs), [i2c_closed_loop.rs](../crates/stablehal-conformance/tests/i2c_closed_loop.rs) | Reference passes 50-seed envelope; each `I2cSlaveBugs` entry caught with exact clause (or correctly *not* flagged, for the data-only `wrong_read_data` bug); replay-exact. |
-| Closed loop (LIN) | [lin_dst.rs](../crates/stablehal-sim/tests/lin_dst.rs) | Reference passes 50-seed envelope; `corrupt_checksum`/`silent_on_owned` caught with exact clause; replay-exact. No conformance-suite layer yet (T10). |
+| Closed loop (LIN) | [lin_dst.rs](../crates/stablehal-sim/tests/lin_dst.rs), [lin_closed_loop.rs](../crates/stablehal-conformance/tests/lin_closed_loop.rs) | Reference passes 50-seed envelope; `corrupt_checksum`/`silent_on_owned` caught with exact clause; replay-exact; since T10, 4-case `STANDARD_SUITE` passes with declared-clause coverage asserted. |
+| Closed loop (SPI) | [spi_dst.rs](../crates/stablehal-sim/tests/spi_dst.rs), [spi_closed_loop.rs](../crates/stablehal-conformance/tests/spi_closed_loop.rs) | Reference passes 50-seed envelope; `wrong_read_data` correctly *not* flagged (data-only bug); replay-exact; 3-case suite covers SPI-TRANSACTION/CS-TIMING/MODE-DISC/XFER-TIME/CS-MIN-IDLE. |
+| Closed loop (CAN) | [can_dst.rs](../crates/stablehal-sim/tests/can_dst.rs), [can_closed_loop.rs](../crates/stablehal-conformance/tests/can_closed_loop.rs) | Reference tester+responder pass a 50-seed envelope; `silent_no_ack` caught as CAN-ACK, `wrong_response_data`/`silent_no_response` correctly *not* flagged; replay-exact; 3-case suite covers CAN-ID-FIELD/CAN-RTR-DISC/CAN-ACK. |
+| Envelope containment | [envelope.rs](../crates/stablehal-conformance/tests/envelope.rs), [i2c_envelope.rs](../crates/stablehal-conformance/tests/i2c_envelope.rs), [lin_envelope.rs](../crates/stablehal-conformance/tests/lin_envelope.rs), [containment.rs](../tools/stablehal-certify/tests/containment.rs) | `sim_envelope` measures every timing clause `RtuContract`/`I2cContract`/`LinContract` judge inside `step` on a conforming reference run; a "hardware" capture matching the sim's own reference traffic is `COVERED`, one operating outside it (still contract-conforming) is `UNCOVERED` — proves the check has teeth, not just that it type-checks. |
 | Capture round-trip | [round_trip.rs](../crates/stablehal-shc1/tests/round_trip.rs) | Sim-side oracle verdict == certifier-from-SHC1-capture verdict, for the reference and all 6 `SlaveBugs` — validates the hardware-capture path before any firmware exists. |
-| Envelope containment | [envelope.rs](../crates/stablehal-conformance/tests/envelope.rs), [containment.rs](../tools/stablehal-certify/tests/containment.rs) | `sim_envelope` measures every timing clause on a conforming reference run; a "hardware" capture matching the sim's own reference traffic is `COVERED`, one operating outside it (still contract-conforming) is `UNCOVERED` — proves the check has teeth, not just that it type-checks. |
 | Measurement | example CLIs | 10k-seed sweep, replay check — numbers feed the whitepaper. |
 
 ---
@@ -661,13 +697,13 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | ADR-2 | Drivers are **poll-driven `no_std` state machines** (`poll(now, bus)`), not async. | accepted | Runs identically under sim scheduling and on bare metal; no executor dependence; wake-hint (`wake_at`) keeps sims efficient. |
 | ADR-3 | **Zero external crates** in `crates/*`. | accepted, with one deliberate exception | Auditable determinism; cost: hand-rolled PRNG/hash (~60 LoC), no rmodbus in core (adapter lives outside `crates/`). Exception: `stablehal-embedded-hal` depends on `embedded-hal`/`embedded-io`/`embedded-can` — its entire purpose is bridging to that ecosystem, so the exception is the point, not a lapse; every other `crates/*` member (`stablehal-shc1` included) still depends only on `stablehal-contract` and, where relevant, `stablehal-uart`/`stablehal-modbus`. |
 | ADR-4 | Simulator is **conforming by construction *and* self-judged**. | accepted | The "environment contract" claim is verified every run; a sim bug surfaces as a line-oracle violation (`SimError::Line`). |
-| ADR-5 | Sim topology fixed at **2 devices / 2 simplex lines** for v0.1. | accepted | Covers master/slave pilot; multi-drop & shared buses (I2C) require the Medium abstraction — see [design-spec-next.md §2](design-spec-next.md). |
+| ADR-5 | Sim topology fixed at **2 devices / 2 simplex lines** for v0.1. | accepted | Covers master/slave pilot; multi-drop & shared buses are handled *not* by extending `Sim` but by a separate `Scheduler`-based world per protocol (`I2cWorld`, `LinWorld`) — see ADR-6/ADR-10 and risk T4. |
 | ADR-6 | Higher-layer contracts attach via **`BusObserver`**, keeping `sim` protocol-agnostic. | accepted | `stablehal-sim` never imports modbus; new protocols plug in without touching the engine. |
 | ADR-7 | Frame-oriented contracts get an explicit **`EndOfObservation`** event. | accepted | A trailing frame cannot escape judgement; harnesses must append it (the sim does this in `run_until`). |
 | ADR-8 | Waived breaches **poison** frames instead of halting. | accepted | Lets one oracle instance serve both strict DST (judge all) and conformance probing (judge DUT only). |
 | ADR-9 | `Adu` is a fixed 256-byte buffer (spec max), cloned freely. | accepted | No alloc in `no_std`; clippy "large enum variant" warnings accepted knowingly. |
-| ADR-10 | A protocol crate may ship **contract-only** (clause set + `Contract` state machine, no reference driver/device/sim world) as a valid intermediate state. | accepted | `stablehal-spi`/`stablehal-can` are contract-only today; `stablehal-modbus`/`stablehal-i2c`/`stablehal-lin` have closed the full DST loop. A contract-only crate is a real, checkable artifact (its clauses are already spec-traceable and unit-testable) but has *not* demonstrated the closed-loop claim — do not cite it as pilot evidence until a reference driver + `stablehal-sim` world + DST closed-loop test exist, mirroring the other three. |
-| ADR-11 | Timing measurement is a **side channel of judging**, not a second implementation of the bounds: `Contract::step_measured` defaults to delegating to `step` with a no-op sink, and a contract that overrides it has `step` call back into `step_measured` — exactly one code path computes a duration and checks it. | accepted | Prevents the sim-explored hull and the hardware-measured hull from silently drifting apart from the pass/fail verdict they're supposed to explain. Piloted on `RtuContract` only (§5.6); other contracts keep compiling against the trait default with an empty hull. |
+| ADR-10 | A protocol crate may ship **contract-only** (clause set + `Contract` state machine, no reference driver/device/sim world) as a valid intermediate state. | accepted | Remains accepted policy, but no longer describes any in-scope protocol's current status: `stablehal-spi`/`stablehal-can` closed the full DST loop in T8 (2026-07-11), joining `stablehal-modbus`/`stablehal-i2c`/`stablehal-lin`. All five pilot protocols now have a reference driver + `stablehal-sim` world + DST closed-loop test and may be cited as pilot evidence; ADR-10 stays in force as the policy for any *future* protocol crate added in a contract-only state. |
+| ADR-11 | Timing measurement is a **side channel of judging**, not a second implementation of the bounds: `Contract::step_measured` defaults to delegating to `step` with a no-op sink, and a contract that overrides it has `step` call back into `step_measured` — exactly one code path computes a duration and checks it. | accepted | Prevents the sim-explored hull and the hardware-measured hull from silently drifting apart from the pass/fail verdict they're supposed to explain. Originally piloted on `RtuContract` only (§5.6); since T11 (2026-07-11) also piloted on `I2cContract`/`LinContract`. SPI/CAN contracts still compile against the trait default with an empty hull. |
 
 ---
 
@@ -688,16 +724,16 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | Id | Risk / debt | Mitigation |
 |---|---|---|
 | T1 | **Contract completeness** — a wrong-but-consistent contract passes both sides. | Clause↔spec traceability table; boundary probes at both envelope edges; treat field divergence as contract bugs (fix upgrades all three artifacts). |
-| T2 | Envelope coverage is sampled, not exhausted. | Explicit envelope parameters; scale seeds in CI; planned boundary-biased sampling ([design-spec-next.md §4](design-spec-next.md)). |
+| T2 | Envelope coverage is sampled, not exhausted. | Explicit envelope parameters; scale seeds in CI; boundary-biased sampling (`SplitMix64::pick_biased`, opt-in via `SimConfig::boundary_bias` / `modbus-master --bias`) to concentrate draws on envelope edges. |
 | T3 | Response-timeout race (spec ambiguity: retry may collide with a maximally-late response). | Contract makes the race visible; deployments configure margins; documented in whitepaper §6. |
 | T4 | `Sim` (the original UART/MODBUS engine) is hardcoded to 2 devices / 2 simplex lines. | Resolved for multi-drop protocols by *not* extending `Sim` — `I2cWorld`/`LinWorld` are separate `Scheduler`-based engines supporting N devices via `add_slave` (ADR-6/ADR-10 pattern). `Sim` itself stays 2-device; do not extend it ad hoc. |
 | T5 | `expected_request_len` in [slave.rs](../crates/stablehal-modbus/src/slave.rs) exists only to implement a *bug* (early response); keep it out of reference paths. | Code comment + conformance case GAP-T15-ACCEPTED guards the legal path. |
 | T6 | Clippy warnings (large enum variants, complex runner types). | Accepted for v0.1 (ADR-9); revisit if `Adu` clones show up in profiles. |
 | T7 | The conformance tester's listening window is length-aware but static. | Fine at 9600–115200 baud; recompute per case if very slow bauds are added. |
-| T8 | `stablehal-spi`/`stablehal-can` are contract-only (ADR-10) — no reference driver, no `stablehal-sim` world, no DST closed-loop test, no conformance suite. | Do not cite SPI/CAN as pilot evidence in the whitepaper or elsewhere until the driver/world/suite layers close the loop, mirroring MODBUS/I2C/LIN. Tracked as backlog, not yet in `next_steps.md`. |
+| T8 | ~~`stablehal-spi`/`stablehal-can` are contract-only (ADR-10) — no reference driver, no `stablehal-sim` world, no DST closed-loop test, no conformance suite.~~ **Closed 2026-07-11.** | Resolved: reference driver + `stablehal-sim` world (`SpiWorld`/`CanWorld`) + DST closed-loop test + 3-case conformance suite added for both SPI and CAN; see `ChangeLog.txt` 2026-07-11 entry ("T10/T11/T8: LIN suite, envelope containment for I2C/LIN, SPI + CAN closed-loop pilots") and §3.2/§5.1. SPI/CAN may now be cited as pilot evidence, with the per-clause coverage caveats noted in §5.1. Was tracked as backlog; now reflected in `next_steps.md` as done. |
 | T9 | `targets/rp2040/` firmware (T7 hardware phase) is drafted but **unverified**: never compiled (no `thumbv6m-none-eabi` installed), never flashed, `rp2040-hal` API calls written from memory. | See `targets/rp2040/README.md` "Status" for the itemized gap list; fix on first real build once hardware is available. |
-| T10 | `stablehal-lin` has a closed-loop DST test but no `stablehal_conformance::lin` case suite yet (unlike MODBUS/I2C). | Add a LIN conformance suite following the I2C suite's pattern (`stablehal_conformance::i2c`) when prioritized. |
-| T11 | Envelope containment (§5.6, ADR-11) is piloted on `modbus-rtu` timing clauses only; I2C/LIN/SPI/CAN contracts still use the `step_measured` trait default (empty hull) — containment cannot be claimed for them yet. Containment is also min/max only, not a statistical/percentile guarantee. | Extend `step_measured` to I2C/LIN when prioritized, mirroring the MODBUS pattern (§5.6); document the min/max-only scope in any external certificate language rather than overstating it as a probabilistic bound. |
+| T10 | ~~`stablehal-lin` has a closed-loop DST test but no `stablehal_conformance::lin` case suite yet (unlike MODBUS/I2C).~~ **Closed 2026-07-11.** | Resolved: `stablehal_conformance::lin` added (`mod.rs` + `runner.rs`), 4-case `STANDARD_SUITE`, `tests/lin_closed_loop.rs`; see `ChangeLog.txt` 2026-07-11 entry and §5.1. |
+| T11 | ~~Envelope containment (§5.6, ADR-11) is piloted on `modbus-rtu` timing clauses only; I2C/LIN/SPI/CAN contracts still use the `step_measured` trait default (empty hull) — containment cannot be claimed for them yet.~~ **Partially closed 2026-07-11** (I2C/LIN); SPI/CAN remain open. Containment is also min/max only, not a statistical/percentile guarantee — that scope limit remains. | I2C/LIN resolved: `I2cContract`/`LinContract` now implement `step_measured` mirroring `RtuContract`; `sim_envelope` added to `stablehal_conformance::i2c::runner`/`::lin::runner`; `tests/i2c_envelope.rs`/`tests/lin_envelope.rs`. See `ChangeLog.txt` 2026-07-11 entry and §5.1/§9 (ADR-11). SPI/CAN still use the trait default (empty hull) — extend when prioritized, mirroring the MODBUS/I2C/LIN pattern (§5.6). Document the min/max-only scope in any external certificate language rather than overstating it as a probabilistic bound. |
 
 ---
 
@@ -725,3 +761,47 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | **t1.5 / t3.5** | MODBUS RTU character-time multiples bounding intra-frame gaps / delimiting frames (fixed 750 µs / 1.75 ms above 19200 baud). |
 | **Trace hash** | FNV-1a fingerprint of the canonical wire trace; equality across runs proves replay exactness. |
 | **Waiver** | Direction excluded from judgement so a tester may deliberately violate; never applied to the DUT. |
+
+---
+
+## 13. Engineering ground rules and golden values
+
+These are binding invariants of the codebase. A change that violates one is a
+review blocker; a change that legitimately alters a golden value must say so in
+`ChangeLog.txt` and update the value here in the same commit.
+
+### 13.1 Ground rules
+
+| Id | Rule |
+|----|------|
+| G1 | `crates/*` carry **zero external dependencies** (ADR-3). Third-party code and MCU HALs live only under `adapters/`, `targets/`, `tools/`. The single exception is `stablehal-embedded-hal`, whose entire purpose is bridging to the `embedded-hal` ecosystem. |
+| G2 | **Determinism** (§8.1): no wall clock; one seeded `SplitMix64` per run; every random draw happens in event order; total event order is `(at, seq)`. |
+| G3 | Every new clause carries `id` + spec `citation` + one-sentence `text`, and is exercised by **at least one conformance case and one negative test** that proves the oracle catches its violation. |
+| G4 | Timing derivations go through shared `const fn`s (`UartConfig::char_time`, `Nanos::mul_ratio`, `RtuTiming`/`I2cTiming`/`LinTiming` constructors) — never duplicated arithmetic, so simulator, driver, and oracle agree to the nanosecond. |
+| G5 | Public API additions get doc comments; a contract-version-affecting change gets an explicit `ChangeLog.txt` entry. |
+
+### 13.2 Golden values (assert; never silently change)
+
+| Check | Command | Value |
+|---|---|---|
+| Replay determinism | `modbus-master --replay-check 4242` | trace hash `95f0e863d22deaa9` |
+| 10k-seed sweep (seed 0..10000, 2000 ppm) | `modbus-master --seeds 10000` | 0 violations, 0 property failures, 11 give-ups, 9,876,528 events |
+| CRC-16/MODBUS vector | unit test | `01 03 00 00 00 01` → wire CRC `84 0A` |
+| SplitMix64 seed 0, first output | unit test | `0xe220a8397b1dcdaf` |
+| SPI DST replay determinism | `cargo test -p stablehal-sim --test spi_dst` | same-seed trace hash equal across two runs, different-seed hashes differ (`SpiWorld::trace_hash`) — no literal hash pinned here, unlike MODBUS, since there is no `--replay-check`-style CLI surface for SPI yet |
+| CAN DST replay determinism | `cargo test -p stablehal-sim --test can_dst` | same-seed trace hash equal across two runs, different-seed hashes differ (`CanWorld::trace_hash`) — no literal hash pinned here, unlike MODBUS, since there is no `--replay-check`-style CLI surface for CAN yet |
+
+### 13.3 Contract/certificate registry
+
+| Contract | Version | Clauses | Certificate `contract` code | DST closed loop |
+|---|---|---|---|---|
+| uart-line | 0.1 | 3 | 0x0002 | via modbus-rtu |
+| modbus-rtu | 0.1 | 12 | 0x0001 | yes |
+| i2c | 0.1 | 7 | 0x0003 | yes |
+| lin | 0.1 | 9 | unassigned | yes |
+| spi | — | 7 | unassigned | yes |
+| can | — | 9 | unassigned | yes |
+
+The single source of truth for this table is the `Clause` registry inside each
+protocol crate (`clauses()`); this copy is a convenience index. See §5.1 for
+the per-clause id lists and citations.

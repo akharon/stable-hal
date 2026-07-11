@@ -14,14 +14,23 @@
 #[cfg(feature = "runner")]
 pub mod runner;
 
+pub mod can;
 pub mod i2c;
+pub mod lin;
+pub mod spi;
 
-/// Register initialization pattern the suite assumes.
+/// Register initialization pattern the suite assumes: every holding register
+/// must read back `pattern(addr)` before a case runs, or the case fails on a
+/// value mismatch rather than on the property it's actually testing. See
+/// `docs/user-guide-conformance.md` for how to wire this into a DUT fixture.
 pub fn pattern(addr: u16) -> u16 {
     0xA000 | addr
 }
 
-/// The unit address the DUT must be configured with.
+/// The unit address the DUT must answer to. The suite addresses every
+/// request to this unit; a DUT configured for a different unit address will
+/// fail every case with a routing mismatch, not a real nonconformance. See
+/// `docs/user-guide-conformance.md`.
 pub const DUT_UNIT: u8 = 0x11;
 
 /// Requests the tester can build.

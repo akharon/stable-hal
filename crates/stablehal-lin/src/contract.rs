@@ -11,6 +11,7 @@
 
 use core::mem;
 
+use stablehal_contract::measure::Measurement;
 use stablehal_contract::{Breach, Clause, Contract, Nanos, TimeBound};
 
 use crate::timing::LinTiming;
@@ -245,8 +246,22 @@ impl Contract for LinContract {
     }
 
     fn step(&self, state: &mut LinState, at: Nanos, event: &LinEvent) -> Result<(), Breach> {
+        self.step_measured(state, at, event, &mut |_| {})
+    }
+
+    fn step_measured(
+        &self,
+        state: &mut LinState,
+        at: Nanos,
+        event: &LinEvent,
+        sink: &mut dyn FnMut(Measurement),
+    ) -> Result<(), Breach> {
         match *event {
             LinEvent::Break { dur } => {
+                sink(Measurement {
+                    clause_id: CL_LIN_BREAK.id,
+                    value: dur,
+                });
                 if dur < self.timing.break_min() {
                     self.fail_master(Breach::timing(
                         &CL_LIN_BREAK,
@@ -262,6 +277,10 @@ impl Contract for LinContract {
                     FramePhase::BreakSeen { break_at } => break_at,
                     _ => return self.fail_master(Breach::of(&CL_LIN_BREAK)),
                 };
+                sink(Measurement {
+                    clause_id: CL_LIN_BREAK_DELIM.id,
+                    value: dur,
+                });
                 if dur < self.timing.break_delimiter_min() {
                     self.fail_master(Breach::timing(
                         &CL_LIN_BREAK_DELIM,
@@ -308,6 +327,10 @@ impl Contract for LinContract {
                     ..
                 } = &mut state.phase
                 {
+                    sink(Measurement {
+                        clause_id: CL_LIN_INTERBYTE_MAX.id,
+                        value: gap,
+                    });
                     if gap > self.timing.interbyte_max() {
                         self.fail_slave(Breach::timing(
                             &CL_LIN_INTERBYTE_MAX,
@@ -341,6 +364,10 @@ impl Contract for LinContract {
                     }
                     _ => return self.fail_slave(Breach::of(&CL_LIN_ONE_RESPONSE)),
                 };
+                sink(Measurement {
+                    clause_id: CL_LIN_INTERBYTE_MAX.id,
+                    value: gap,
+                });
                 if gap > self.timing.interbyte_max() {
                     self.fail_slave(Breach::timing(
                         &CL_LIN_INTERBYTE_MAX,
@@ -353,6 +380,10 @@ impl Contract for LinContract {
                 }
                 let elapsed = at.saturating_sub(break_at);
                 let max = self.timing.frame_max(n_data);
+                sink(Measurement {
+                    clause_id: CL_LIN_FRAME_MAXLEN.id,
+                    value: elapsed,
+                });
                 if elapsed > max {
                     self.fail_master(Breach::timing(
                         &CL_LIN_FRAME_MAXLEN,

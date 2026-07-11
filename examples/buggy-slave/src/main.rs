@@ -39,6 +39,21 @@ fn clause_of(text: &str) -> Option<&str> {
 }
 
 fn main() {
+    if std::env::args().any(|a| a == "--help" || a == "-h") {
+        println!(
+            "usage: buggy-slave\n\
+             \n\
+             Closed-loop conformance demo: runs the contract-derived standard\n\
+             suite against the reference MODBUS RTU slave (must pass every\n\
+             case) and against a catalog of deliberately nonconforming slaves\n\
+             (each must fail, with the breached clause named). Takes no\n\
+             arguments.\n\
+             \n\
+             Exit code 0 = the closed loop holds in both directions."
+        );
+        return;
+    }
+
     let cfg = SuiteConfig::default_9600();
     let catalog: Vec<(&str, SlaveBugs)> = vec![
         ("reference (conforming)", SlaveBugs::default()),

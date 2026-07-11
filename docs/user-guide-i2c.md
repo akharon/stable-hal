@@ -4,8 +4,8 @@ Audience: driver developers writing protocol code against the StableHAL I2C
 boundary, and implementers providing an I2C backend (simulator or hardware).
 
 v1 scope: single master, N slaves. Multi-master arbitration is reserved
-(clause id `I2C-ARBITRATION`) and explicitly not implemented — see
-`docs/design-spec-next.md` WP2 §2.3 for the full "not yet" list.
+(clause id `I2C-ARBITRATION`) and explicitly not implemented; 10-bit
+addressing and SMBus PEC are also out of v1 scope (architecture.md §3.2).
 
 ## 1. The two faces of the crate
 

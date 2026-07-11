@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/stablehal",
     "crates/stablehal-contract",
     "crates/stablehal-uart",
     "crates/stablehal-sim",
@@ -14,6 +15,7 @@ members = [
     "crates/stablehal-embedded-hal",
     "examples/modbus-master",
     "examples/buggy-slave",
+    "examples/hello-sim",
     "adapters/rmodbus-slave",
     "tools/stablehal-certify",
 ]
@@ -21,10 +23,12 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mkyr/StableHAL"
 
 [workspace.dependencies]
+stablehal = { path = "crates/stablehal" }
 stablehal-contract = { path = "crates/stablehal-contract" }
 stablehal-uart = { path = "crates/stablehal-uart" }
 stablehal-sim = { path = "crates/stablehal-sim" }

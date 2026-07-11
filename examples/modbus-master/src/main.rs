@@ -133,8 +133,29 @@ fn arg_value(args: &[String], key: &str) -> Option<u64> {
         .and_then(|v| v.parse().ok())
 }
 
+fn print_usage() {
+    println!(
+        "usage: modbus-master [--seeds N] [--corrupt PPM] [--bias] [--replay-check SEED]\n\
+         \n\
+         DST sweep demo: the MODBUS RTU master driver exercised across the\n\
+         whole simulated environment envelope (latency jitter + character\n\
+         corruption), judged online by the UART line and RTU wire contracts.\n\
+         \n\
+         --seeds N            number of seeds to sweep (default 1000)\n\
+         --corrupt PPM        character corruption rate, parts per million (default 2000)\n\
+         --bias               bias latency draws toward envelope boundaries (default off)\n\
+         --replay-check SEED  run one seed twice and confirm the trace hash matches\n\
+         \n\
+         Exit code 0 = every seed conforming and no silent data corruption."
+    );
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_usage();
+        return;
+    }
     let seeds = arg_value(&args, "--seeds").unwrap_or(1000);
     let corrupt_ppm = arg_value(&args, "--corrupt").unwrap_or(2000) as u32;
     let bias = args.contains(&"--bias".to_string());

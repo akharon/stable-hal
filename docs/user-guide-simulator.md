@@ -147,7 +147,8 @@ flakiness.
   the event order (not during setup iteration over a hash map, etc.).
 * New scheduled work goes through the queue so the `(at, seq)` total order
   stays authoritative.
-* Topology beyond two devices (multi-drop RS-485, I2C shared bus) must go
-  through the **Medium abstraction** specified in
-  [design-spec-next.md §2](design-spec-next.md) — do not special-case a third
-  device into the current engine.
+* Topology beyond two devices (multi-drop RS-485, I2C shared bus) is handled
+  by a **separate `Scheduler`-based world per protocol** (`i2c::I2cWorld`,
+  `lin::LinWorld`), not by special-casing a third device into the 2-device
+  UART `Sim`. Follow that pattern (architecture.md ADR-6/ADR-10, risk T4) for
+  any new multi-drop protocol.

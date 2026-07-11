@@ -3,6 +3,7 @@ name = "modbus-master"
 description = "DST sweep demo: MODBUS RTU master driver exercised across the whole environment envelope"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

@@ -54,7 +54,15 @@ impl LinMasterAdapter {
 impl LinMasterActor for LinMasterAdapter {
     fn poll(&mut self, now: Nanos, port: &mut dyn LinBus) -> NextPoll {
         let _ = now;
-        self.inner.step(port);
+        // `ScheduleMaster::step` advances exactly one phase transition per
+        // call (Idle -> InFlight sends a header; InFlight -> Idle collects a
+        // finished slot's outcome). Drain every transition available *this*
+        // tick — otherwise a just-collected slot's Idle->InFlight header for
+        // the *next* slot never gets sent until some later event wakes us,
+        // which never arrives once the current slot has fully closed out,
+        // silently stalling the schedule after its first slot (mirrors the
+        // same fix in `I2cMasterAdapter::poll`).
+        while self.inner.step(port) {}
         if self.inner.done() {
             NextPoll::Done
         } else {

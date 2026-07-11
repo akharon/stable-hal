@@ -4,7 +4,7 @@
 //! behind the StableHAL boundary *unmodified* and run STANDARD_SUITE
 //! against it.
 //!
-//! Attribution split (design-spec-next.md §1.3):
+//! Attribution split (what each side of the loop actually certifies):
 //! * Wire-timing clauses (RTU-T35-FRAME, RTU-T15-INTRA, RTU-RESP-TIME)
 //!   certify **the adapter's** RX-framing and TX-pacing code (mirrors
 //!   RtuSlave).

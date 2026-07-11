@@ -3,6 +3,7 @@ name = "stablehal-shc1"
 description = "SHC1 capture stream format: header/record codec + RTU event mapping, shared by the sim-side writer and the host certifier tool"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

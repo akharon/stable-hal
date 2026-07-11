@@ -3,6 +3,7 @@ name = "stablehal-can"
 description = "CAN data-link contract (frame fields, bit-stuffing, CRC, ACK, error frames) + poll-driven controller HAL trait, all no_std"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

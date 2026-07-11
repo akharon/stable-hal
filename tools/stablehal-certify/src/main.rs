@@ -44,6 +44,10 @@ fn main() -> ExitCode {
         "measure" => measure::run(&args[1..]),
         "sim-envelope" => cli_sim_envelope::run(&args[1..]),
         "contain" => cli_contain::run(&args[1..]),
+        "--help" | "-h" => {
+            usage();
+            ExitCode::SUCCESS
+        }
         // No recognized subcommand and the first arg doesn't look like a
         // flag: treat it as `judge <path>` for backward compatibility with
         // the pre-subcommand invocation.

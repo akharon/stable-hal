@@ -3,6 +3,7 @@ name = "stablehal-i2c"
 description = "I2C transaction contract (byte/ACK/Start-Stop granularity, clock stretch cap) + conforming master driver and reference register-pointer slave"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

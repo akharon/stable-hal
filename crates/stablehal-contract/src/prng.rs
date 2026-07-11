@@ -71,15 +71,28 @@ mod tests {
 
     #[test]
     fn splitmix64_reference_vector() {
-        // Reference sequence for seed 1234567 from the published algorithm.
-        let mut a = SplitMix64::new(0);
-        let mut b = SplitMix64::new(0);
-        for _ in 0..1000 {
-            assert_eq!(a.next_u64(), b.next_u64());
+        // Golden vector: the canonical SplitMix64 output for seed 0, as
+        // published by the reference implementation (Steele/Lea/Flood 2014,
+        // used by the JDK and xoshiro seeders). Pinning the *actual values*
+        // (not just self-consistency) is what protects the load-bearing
+        // determinism claim: any change to the constants or mixing steps —
+        // which would silently invalidate every recorded trace hash across
+        // platforms — fails here first.
+        let expected: [u64; 5] = [
+            0xe220a8397b1dcdaf,
+            0x6e789e6aa1b965f4,
+            0x06c45d188009454f,
+            0xf88bb8a8724c81ec,
+            0x1b39896a51a8749b,
+        ];
+        let mut r = SplitMix64::new(0);
+        for (i, want) in expected.iter().enumerate() {
+            assert_eq!(r.next_u64(), *want, "SplitMix64(0) output {i} drifted");
         }
-        // Distinct seeds diverge immediately.
-        let mut c = SplitMix64::new(1);
-        assert_ne!(SplitMix64::new(0).next_u64(), c.next_u64());
+
+        // Same seed is reproducible; distinct seeds diverge immediately.
+        assert_eq!(SplitMix64::new(0).next_u64(), SplitMix64::new(0).next_u64());
+        assert_ne!(SplitMix64::new(0).next_u64(), SplitMix64::new(1).next_u64());
     }
 
     #[test]

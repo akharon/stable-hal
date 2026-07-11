@@ -3,6 +3,7 @@ name = "stablehal-certify"
 description = "Host tool: parse an SHC1 capture, judge it against the RTU contract oracle, and emit a conformance certificate (hand-rolled JSON, zero third-party deps)"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [[bin]]

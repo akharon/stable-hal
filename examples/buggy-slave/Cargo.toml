@@ -3,6 +3,7 @@ name = "buggy-slave"
 description = "Conformance demo: reference slave passes the suite, a catalog of nonconforming slaves fails with pinpointed clauses"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

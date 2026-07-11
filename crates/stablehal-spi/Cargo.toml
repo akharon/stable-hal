@@ -3,6 +3,7 @@ name = "stablehal-spi"
 description = "SPI wire contract (CPOL/CPHA, chip-select discipline, mode fault) + poll-driven master/slave HAL traits, all no_std"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

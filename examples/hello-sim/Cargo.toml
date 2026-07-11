@@ -1,0 +1,10 @@
+[package]
+name = "hello-sim"
+description = "Tutorial artifact: two toy devices, one contract, one seed — the smallest complete StableHAL walkthrough (see docs/getting-started.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+stablehal = { workspace = true, features = ["sim"] }

@@ -9,6 +9,7 @@
 
 use core::mem;
 
+use stablehal_contract::measure::Measurement;
 use stablehal_contract::{Breach, Clause, Contract, Nanos, TimeBound};
 
 use crate::timing::I2cTiming;
@@ -174,9 +175,18 @@ pub struct I2cState {
 }
 
 impl I2cContract {
-    fn open_transaction(&self, state: &mut I2cState, at: Nanos) -> Result<(), Breach> {
+    fn open_transaction(
+        &self,
+        state: &mut I2cState,
+        at: Nanos,
+        sink: &mut dyn FnMut(Measurement),
+    ) -> Result<(), Breach> {
         if let BusPhase::Free { since: Some(since) } = state.phase {
             let idle = at.saturating_sub(since);
+            sink(Measurement {
+                clause_id: CL_I2C_BUS_FREE.id,
+                value: idle,
+            });
             if idle < self.timing.bus_free_min {
                 self.fail_master(Breach::timing(
                     &CL_I2C_BUS_FREE,
@@ -223,8 +233,18 @@ impl Contract for I2cContract {
     }
 
     fn step(&self, state: &mut I2cState, at: Nanos, event: &I2cEvent) -> Result<(), Breach> {
+        self.step_measured(state, at, event, &mut |_| {})
+    }
+
+    fn step_measured(
+        &self,
+        state: &mut I2cState,
+        at: Nanos,
+        event: &I2cEvent,
+        sink: &mut dyn FnMut(Measurement),
+    ) -> Result<(), Breach> {
         match *event {
-            I2cEvent::Start => self.open_transaction(state, at),
+            I2cEvent::Start => self.open_transaction(state, at, sink),
             I2cEvent::AddrByte { addr7, read, acked } => {
                 match &mut state.phase {
                     BusPhase::Open { .. } => {}
@@ -232,7 +252,7 @@ impl Contract for I2cContract {
                         // Address byte with no preceding Start observed: the
                         // bus monitor never sees this in a well-formed run,
                         // but treat as an implicit Start for robustness.
-                        self.open_transaction(state, at)?;
+                        self.open_transaction(state, at, sink)?;
                     }
                 }
                 if let BusPhase::Open {
@@ -284,6 +304,10 @@ impl Contract for I2cContract {
             I2cEvent::Stretch { dur } => {
                 if let BusPhase::Open { byte_stretch, .. } = &mut state.phase {
                     *byte_stretch += dur;
+                    sink(Measurement {
+                        clause_id: CL_I2C_STRETCH_MAX.id,
+                        value: *byte_stretch,
+                    });
                     if byte_stretch.as_nanos() > self.timing.stretch_max.as_nanos() {
                         self.fail_slave(Breach::timing(
                             &CL_I2C_STRETCH_MAX,

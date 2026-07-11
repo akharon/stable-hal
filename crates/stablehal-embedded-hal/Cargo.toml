@@ -3,6 +3,7 @@ name = "stablehal-embedded-hal"
 description = "Bridge between StableHAL's contract-aware HAL traits and the Rust embedded-hal ecosystem. Adapts embedded-hal traits (embedded_hal::i2c, embedded_hal::spi, embedded-io serial) so they can be exercised by StableHAL's sim, judged by StableHAL's oracles, and certified against StableHAL's contracts."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]

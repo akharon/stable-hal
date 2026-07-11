@@ -58,7 +58,15 @@ impl I2cMasterAdapter {
 impl I2cMasterActor for I2cMasterAdapter {
     fn poll(&mut self, now: Nanos, port: &mut dyn I2cMaster) -> NextPoll {
         let _ = now;
-        self.inner.step(port);
+        // `ScriptedMaster::step` advances exactly one phase transition per
+        // call (Idle -> InFlight submits an op; InFlight -> Idle collects a
+        // finished one). Drain every transition available *this* tick —
+        // otherwise a just-completed op's Idle->InFlight submission of the
+        // *next* step never happens until some later event wakes us, which
+        // for a script step following a `stop: true` op never arrives (the
+        // bus is idle and nothing else is scheduled), silently stalling the
+        // script after its first op.
+        while self.inner.step(port) {}
         if self.inner.done() {
             NextPoll::Done
         } else {

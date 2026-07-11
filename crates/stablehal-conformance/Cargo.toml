@@ -3,6 +3,7 @@ name = "stablehal-conformance"
 description = "Contract-derived conformance suite: case generation (no_std core) + simulator-hosted runner"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 # On-target builds use `default-features = false` to keep the case
@@ -16,4 +17,7 @@ stablehal-contract = { workspace = true }
 stablehal-uart = { workspace = true }
 stablehal-modbus = { workspace = true }
 stablehal-i2c = { workspace = true }
+stablehal-lin = { workspace = true }
+stablehal-spi = { workspace = true }
+stablehal-can = { workspace = true }
 stablehal-sim = { workspace = true, optional = true }
