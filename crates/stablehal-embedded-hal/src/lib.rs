@@ -1,5 +1,5 @@
 //! Bridge between StableHAL's contract-aware HAL traits and the Rust
-//! [`embedded-hal`] ecosystem.
+//! `embedded-hal` ecosystem.
 //!
 //! A plain HAL is just a signature — `embedded-hal` doesn't bind either
 //! side to timing, ordering, or fault behaviour. StableHAL contracts fill
@@ -19,9 +19,9 @@
 //!
 //! # Feature flags
 //!
-//! * `spi` — enables SPI bridge via [`SpiMasterBridge`] (requires
+//! * `spi` — enables the SPI bridge (`SpiMasterBridge`, requires
 //!   `stablehal-spi`).
-//! * `can` — enables CAN bridge via [`CanControllerBridge`] (requires
+//! * `can` — enables the CAN bridge (`CanControllerBridge`, requires
 //!   `stablehal-can`).
 //!
 //! Both are enabled by default.

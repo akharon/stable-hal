@@ -11,7 +11,7 @@
 //! Risk T8 (closed-loop pilot): a conforming reference master
 //! ([`master::ScriptedSpiMaster`]) and reference device
 //! ([`device::SpiRegisterDevice`]) exist alongside the contract, driven by a
-//! `stablehal-sim`-hosted [`stablehal_sim::spi::SpiWorld`] and a
+//! `stablehal-sim`-hosted `stablehal_sim::spi::SpiWorld` and a
 //! `stablehal_conformance::spi` suite — mirroring MODBUS/I2C/LIN.
 //!
 //! SPI's fully-synchronous, symmetric byte exchange (every clock both

@@ -152,3 +152,18 @@ exercises the reference DUT with three cases: `SPI-BASIC-TRANSFER`,
 `SPI-TRANSACTION`, `SPI-CS-TIMING`, `SPI-MODE-DISC`, `SPI-XFER-TIME`, and
 `SPI-CS-MIN-IDLE`. `SPI-MODE-FAULT` and `SPI-DATA-VALID` are excluded from
 the suite's coverage assertion — see §5 for why.
+
+## 8. Envelope containment
+
+Since T12, `SpiContract` implements `Contract::step_measured` (ADR-11): its
+two timing clauses `SPI-CS-MIN-IDLE` and `SPI-XFER-TIME` report every
+measured duration — passing or not — through a side channel, so the
+sim-explored hull can be compared against a hardware-measured one.
+`stablehal_conformance::spi::runner::sim_envelope(seed)` drives the reference
+master/device over a back-to-back-transfer script and folds those
+measurements into an `EnvelopeAccumulator`; `tests/spi_envelope.rs` asserts a
+nonempty hull per clause on a conforming run. This is the same mechanism used
+for MODBUS/I2C/LIN — see [user-guide-containment.md](user-guide-containment.md)
+for the full model. (The `stablehal-certify` CLI's containment subcommands
+remain MODBUS-only; SPI containment is exercised through the conformance
+runner + tests.)

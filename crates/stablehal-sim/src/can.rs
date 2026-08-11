@@ -1,5 +1,5 @@
 //! Deterministic CAN bus simulator: N symmetric nodes sharing a
-//! [`Scheduler`], mirroring [`crate::i2c::I2cWorld`]'s determinism
+//! `Scheduler`, mirroring [`crate::i2c::I2cWorld`]'s determinism
 //! guarantees but with a genuinely different topology (see
 //! `stablehal_can::node`'s doc comment): CAN has no master/slave, so
 //! `CanWorld` polls every node for an offered frame each bus-idle tick,

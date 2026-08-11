@@ -5,22 +5,27 @@ Read order for a cold start: [README.md](README.md) →
 [docs/](docs/) as needed. Binding engineering ground rules (G1–G5) and the
 golden values that must survive refactors live in **architecture.md §13**.
 
-## Done (M0–M4 + T1–T11)
+## Done (M0–M4 + T1–T12)
 
 The contract kernel, deterministic simulator, MODBUS RTU / I2C / LIN / SPI /
 CAN closed-loop pilots (all five now have a reference driver/device, a
 `stablehal-sim` world, and a conformance suite), boundary-biased sampling,
 the `rmodbus` third-party adapter (10/13 suite pass, documented differences),
 the SHC1 capture format + `stablehal-certify` with round-trip verdict
-identity, the envelope-containment pilot (now MODBUS + I2C + LIN), and
-whitepaper v0.2 are all complete and verified — `scripts/verify.sh` exits 0
-end to end. See `ChangeLog.txt` for the per-change history.
+identity, the envelope-containment pilot (MODBUS + I2C + LIN + SPI; T12 added
+SPI), and whitepaper v0.2 are all complete and verified — `scripts/verify.sh`
+exits 0 end to end. See `ChangeLog.txt` for the per-change history.
 
 Ease of integration: the façade crate (`crates/stablehal`, one dependency +
-one `prelude`) and a GitHub Actions CI job (`.github/workflows/ci.yml`
-running `scripts/verify.sh` on every push) both shipped. The one remaining
-idea — `crates.io` publishing — is deliberately not started; it's a one-way
-public action that needs separate explicit sign-off, not a code change.
+one `prelude` covering every protocol) and a GitHub Actions CI job
+(`.github/workflows/ci.yml` running `scripts/verify.sh` on every push) both
+shipped. The one remaining idea — `crates.io` publishing — is deliberately
+not started; it's a one-way public action that needs separate explicit
+sign-off, not a code change.
+
+Forward-looking design explorations that are **not** on this backlog (record/
+replay statefulness limits, a declarative/typed contract vocabulary for LLM
+authoring) live in [docs/design-notes.md](docs/design-notes.md).
 
 ## Open backlog
 
@@ -40,15 +45,7 @@ whitepaper's central claim.
 - **Acceptance:** a real capture certified `CONFORMING`; whitepaper §7 moves
   from "specified" to "demonstrated".
 
-### 2. Extend envelope containment to SPI/CAN
-`step_measured` is now implemented on `RtuContract`, `I2cContract`, and
-`LinContract` (risk T11 closed for the protocols it was scoped to). SPI's
-timing clauses (`SPI-XFER-TIME`, `SPI-CS-MIN-IDLE`) and CAN's frame-duration
-estimate are candidates if containment claims are ever needed for those two
-— not currently tracked as a numbered risk since the original risk register
-only scoped T11 to I2C/LIN.
-
-### 3. CAN arbitration/topology beyond the 2-node reference world
+### 2. CAN arbitration/topology beyond the 2-node reference world
 `CanWorld`'s arbitration (lowest `CanId` wins) and termination rule
 (`nodes.iter().any(|n| n.done())`) are correct for the shipped reference
 topology of one tester + one responder, but are explicitly documented

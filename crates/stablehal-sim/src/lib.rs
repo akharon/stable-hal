@@ -5,7 +5,7 @@
 //!
 //! Determinism guarantees:
 //! * one virtual clock, no wall time anywhere;
-//! * one seeded [`SplitMix64`] stream is the only source of randomness —
+//! * one seeded [`SplitMix64`](stablehal_contract::SplitMix64) stream is the only source of randomness —
 //!   latencies inside the environment envelope, fault injection choices;
 //! * the event queue breaks timestamp ties by insertion sequence number.
 //!

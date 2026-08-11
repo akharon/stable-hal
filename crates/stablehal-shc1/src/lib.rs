@@ -8,7 +8,7 @@
 //! ```text
 //! Header (16 bytes, once per stream):
 //!   magic       u32  = 0x31434853        ("SHC1")
-//!   contract    u16  = 0x0001            (rtu v0.1; registry in design-spec)
+//!   contract    u16  = 0x0001            (rtu v0.1; registry in architecture.md §13.3)
 //!   flags       u16  = bit0: self_report (tester timestamps its own TX)
 //!                      bit1: observer    (independent bus observer)
 //!   baud        u32

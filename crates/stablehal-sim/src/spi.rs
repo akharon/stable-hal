@@ -1,5 +1,5 @@
 //! Deterministic SPI bus simulator: one master actor, N chip-selected slave
-//! devices, sharing a [`Scheduler`]. Mirrors [`crate::i2c::I2cWorld`]'s
+//! devices, sharing a `Scheduler`. Mirrors [`crate::i2c::I2cWorld`]'s
 //! determinism guarantees and structure but is kept independent per WP2
 //! §2.3 (no merged event enum, no shared `Sim` engine).
 //!

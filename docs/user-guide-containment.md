@@ -5,9 +5,16 @@ against the contract oracle, separately" story to replace part of their
 SW–HW integration test matrix, and wants to know what actually backs that
 claim.
 
-Pilot scope: MODBUS RTU only, timing clauses only (`RTU-T35-FRAME`,
-`RTU-T15-INTRA`, `RTU-MASTER-WAIT`, `RTU-RESP-TIME`). CRC/framing/PDU
-clauses are boolean, not timing envelopes, so they have no hull to contain.
+Scope: this guide walks the **`stablehal-certify` CLI containment path, which
+is MODBUS RTU only** — timing clauses only (`RTU-T35-FRAME`, `RTU-T15-INTRA`,
+`RTU-MASTER-WAIT`, `RTU-RESP-TIME`); CRC/framing/PDU clauses are boolean, not
+timing envelopes, so they have no hull to contain. The underlying mechanism
+(`Contract::step_measured` + `sim_envelope`, §2–§3) is also implemented for
+**I2C, LIN, and SPI** (exercised through
+`stablehal_conformance::{i2c,lin,spi}::runner::sim_envelope` and their
+`*_envelope.rs` tests), so the same containment reasoning applies there.
+**CAN** has no timing-envelope clause (frame duration is a world-level
+jitter, not a contract bound), so containment does not apply to it.
 
 ## 1. The gap this closes
 

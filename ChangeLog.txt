@@ -4,6 +4,66 @@ Format: date — version — changes. Newest first.
 Semantics: "contract version" changes are called out explicitly, because they
 invalidate previously issued conformance certificates.
 
+2026-08-11 — 0.1.0 — T12: SPI envelope containment + docs unification +
+usability/legal polish (no contract change)
+------------------------------------------------------------
+Added (risk T12 — envelope containment for SPI):
+  * `SpiContract` now implements `step_measured` (previously only
+    `RtuContract`/`I2cContract`/`LinContract` did): `step` delegates to it
+    with a no-op sink, mirroring the others exactly (ADR-11, single judging
+    path). Measures `SPI-CS-MIN-IDLE` (idle gap between transfers) and
+    `SPI-XFER-TIME` (per-byte transfer duration) — the two timing clauses
+    judged inside `step`.
+  * `sim_envelope` in `stablehal_conformance::spi::runner` (mirrors the
+    existing MODBUS/I2C/LIN `sim_envelope`), folding measurements into an
+    `EnvelopeAccumulator<4>`; `tests/spi_envelope.rs` (2 tests: reference run
+    conforms with a nonempty hull per clause; distinct seeds stay within the
+    xfer envelope floor).
+  * CAN deliberately NOT extended: it has no timing-envelope clause (frame
+    duration is a world-level jitter, not a contract bound), so there is no
+    hull to contain. Documented in §5.1/§5.6/§9/§11 rather than forced.
+Usability:
+  * `crates/stablehal` prelude completed: feature-gated re-exports for
+    `i2c`/`lin`/`spi`/`can`/`shc1` (previously only contract/uart/sim/modbus/
+    conformance), plus sim-gated world types (`I2cWorld`/`LinWorld`/`SpiWorld`/
+    `CanWorld` + adapters/configs). Verified across the feature matrix
+    (default, `--no-default-features`, no_std protocol set, `--all-features`
+    — the last proves no prelude name clashes). Distinctly-named per protocol,
+    so a plain `use stablehal::prelude::*;` stays clash-free.
+Legal / community:
+  * Added `LICENSE-MIT` and `LICENSE-APACHE` (Cargo.toml declared
+    `MIT OR Apache-2.0` but neither file existed), `CONTRIBUTING.md`
+    (ground rules G1–G5, golden values, verify gate), `SECURITY.md`
+    (reporting + posture: zero-dep core, `#![deny(unsafe_code)]`). README
+    gains a "Contributing & license" section.
+Docs unification / dedup:
+  * `docs/user-guide-lin.md` §8: corrected a stale claim that the LIN
+    conformance suite was "not yet built" — T10 shipped it (2026-07-11).
+  * `docs/architecture.md`: removed the duplicated clause/certificate registry
+    (§5.1 table) — §13.3 is now the sole index and §5.1 points to it;
+    reconciled the i2c certificate code label to `0x0003 (reserved)` (only
+    `modbus-rtu` 0x0001 is wired into the certifier). §3.2/§5.6/§8.4/§9/§11
+    swept for T12 (SPI containment) consistency.
+  * Split `docs/market_analysis.md` (untracked): its two design ideas
+    (record/replay statefulness limits; a declarative/typed-contract proposal
+    for LLM authoring) moved into new `docs/design-notes.md` marked
+    "not scheduled"; the market-positioning sections (overlapping
+    architecture §3/§11 + whitepaper §2/§6) dropped. File removed.
+  * Removed `docs/plan-usability.md` — a "proposed, not started" plan for work
+    that has all shipped (façade, hello-sim, getting-started, CLI `--help`,
+    CI), so it read as false.
+  * Fixed a stale doc-comment in `crates/stablehal-shc1/src/lib.rs` pointing at
+    the removed design-spec doc → now architecture.md §13.3.
+  * README doc index + next_steps refreshed (design-notes added; backlog item
+    "extend containment to SPI/CAN" retired — SPI done, CAN N/A).
+CI:
+  * `scripts/verify.sh` / `.github/workflows/ci.yml` gain a façade
+    feature-matrix check and a `cargo doc --no-deps` build (broken intra-doc
+    links now fail CI).
+Contract versions: unchanged (no clause text/id changed; `SpiContract` gained
+`step_measured` around its existing clauses, not new clauses). MODBUS golden
+trace hash `95f0e863d22deaa9` confirmed unchanged.
+
 2026-07-11 — 0.1.0 — T10/T11/T8: LIN suite, envelope containment for I2C/LIN,
 SPI + CAN closed-loop pilots (no MODBUS contract change)
 ------------------------------------------------------------

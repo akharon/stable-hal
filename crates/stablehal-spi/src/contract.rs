@@ -6,6 +6,7 @@
 //! so a conformance tester may deliberately emit malformed stimuli while the
 //! device under test is still held to every clause.
 
+use stablehal_contract::measure::Measurement;
 use stablehal_contract::{Breach, Clause, Contract, Nanos, TimeBound};
 
 use crate::{SpiConfig, SpiMode};
@@ -148,12 +149,31 @@ impl Contract for SpiContract {
     }
 
     fn step(&self, state: &mut SpiState, at: Nanos, event: &SpiEvent) -> Result<(), Breach> {
+        self.step_measured(state, at, event, &mut |_| {})
+    }
+
+    /// Envelope-containment side channel (ADR-11): reports every timing
+    /// duration it computes — passing or not — before checking the bound, so
+    /// `step` and `step_measured` share exactly one judging path. Measures
+    /// `SPI-CS-MIN-IDLE` (idle gap between transfers) and `SPI-XFER-TIME`
+    /// (per-byte transfer duration).
+    fn step_measured(
+        &self,
+        state: &mut SpiState,
+        at: Nanos,
+        event: &SpiEvent,
+        sink: &mut dyn FnMut(Measurement),
+    ) -> Result<(), Breach> {
         match *event {
             SpiEvent::CsAssert { chip, mode } => {
                 let phase = core::mem::replace(&mut state.phase, SpiPhase::Idle { since: at });
                 match phase {
                     SpiPhase::Idle { since } => {
                         let idle = at.saturating_sub(since);
+                        sink(Measurement {
+                            clause_id: CL_SPI_CS_MIN_IDLE.id,
+                            value: idle,
+                        });
                         if idle < self.config.cs_idle_min {
                             self.fail_master(Breach::timing(
                                 &CL_SPI_CS_MIN_IDLE,
@@ -194,6 +214,10 @@ impl Contract for SpiContract {
                         xfer_start,
                     } => {
                         let elapsed = at.saturating_sub(*xfer_start);
+                        sink(Measurement {
+                            clause_id: CL_SPI_XFER_TIME.id,
+                            value: elapsed,
+                        });
                         let expected_dur = self
                             .config
                             .sclk_period

@@ -164,8 +164,16 @@ closed loop exists to catch.
 
 ## 8. Conformance suite
 
-Not yet built — LIN v1 currently ships the contract, reference master/slave,
-and simulator world with a closed-loop DST test
-(`crates/stablehal-sim/tests/lin_dst.rs`), but no
-`stablehal_conformance::lin` case suite analogous to MODBUS's
-`STANDARD_SUITE` or I2C's suite yet. See `next_steps.md` for backlog status.
+`stablehal_conformance::lin::STANDARD_SUITE` (behind the `runner` feature)
+exercises the reference DUT with four cases covering `LIN-CHECKSUM`,
+`LIN-FRAME-MAXLEN`, `LIN-INTERBYTE-MAX`, and `LIN-SLAVE-SILENCE`
+(`crates/stablehal-conformance/tests/lin_closed_loop.rs`). The header clauses
+(`LIN-BREAK`, `LIN-BREAK-DELIM`, `LIN-SYNC`, `LIN-PID-PARITY`) are generated
+conforming-by-construction on every slot — the same treatment as I2C's
+`I2C-BUS-FREE`/`I2C-BYTE-TIME` — so they are validated by the closed-loop DST
+sweep rather than a dedicated case. `LIN-ONE-RESPONSE` needs two publishers
+contending for one slot, unreachable from this reference world's
+single-first-match wiring. LIN also has a closed-loop DST test
+(`crates/stablehal-sim/tests/lin_dst.rs`) and an envelope-containment path
+(§ containment, `tests/lin_envelope.rs`) measuring `LIN-BREAK`,
+`LIN-BREAK-DELIM`, `LIN-INTERBYTE-MAX`, `LIN-FRAME-MAXLEN`.

@@ -18,7 +18,7 @@
 //! directly (unlike MODBUS/I2C/LIN's master + N-addressed-slaves shape); a
 //! reference tester ([`node::CanScriptedNode`]) and reference responder
 //! ([`node::CanRegisterNode`]) are driven by a `stablehal-sim`-hosted
-//! [`stablehal_sim::can::CanWorld`] and a `stablehal_conformance::can`
+//! `stablehal_sim::can::CanWorld` and a `stablehal_conformance::can`
 //! suite, mirroring MODBUS/I2C/LIN/SPI.
 //!
 //! Raw CAN is broadcast-only with no notion of "request/response" at the

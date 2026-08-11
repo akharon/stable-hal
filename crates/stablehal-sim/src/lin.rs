@@ -1,5 +1,5 @@
 //! Deterministic LIN bus simulator: one master actor, N slave devices,
-//! sharing a [`Scheduler`]. Mirrors [`crate::Sim`]'s determinism guarantees
+//! sharing a `Scheduler`. Mirrors [`crate::Sim`]'s determinism guarantees
 //! (single seeded PRNG stream, `(at, seq)` total event order) but is kept
 //! independent per WP2 §2.3 (same rationale as [`crate::i2c::I2cWorld`]) —
 //! no merged event enum, no shared `Sim` engine.

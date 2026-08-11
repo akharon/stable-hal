@@ -132,6 +132,7 @@ crate, e.g. `cargo doc --open -p stablehal-sim`).
 | [docs/user-guide-conformance.md](docs/user-guide-conformance.md) | Running/reading the suite, certifying a slave, adding cases |
 | [docs/user-guide-containment.md](docs/user-guide-containment.md) | Envelope containment: proving the sim exercised where the hardware lives |
 | [next_steps.md](next_steps.md) | Open backlog (hardware bring-up, remaining suites) |
+| [docs/design-notes.md](docs/design-notes.md) | Forward-looking design explorations (not scheduled): record/replay limits, declarative typed contracts |
 | [ChangeLog.txt](ChangeLog.txt) | Versioned change history, incl. contract versions |
 
 ## Workspace layout
@@ -195,5 +196,19 @@ occupies) is piloted on MODBUS, I2C, and LIN.
 
 Open work is tracked in [next_steps.md](next_steps.md) and architecture.md §11
 (risks/debt): on-target hardware certification (`targets/rp2040`, drafted but
-unverified) is the main one — envelope containment for SPI/CAN and CAN's
-multi-node topology are smaller, unscheduled follow-ups.
+unverified) is the main one — CAN's multi-node topology is a smaller,
+unscheduled follow-up. (Envelope containment now covers MODBUS, I2C, LIN, and
+SPI; it does not apply to CAN, which has no timing-envelope clause.)
+
+## Contributing & license
+
+Contributions are welcome — please read [CONTRIBUTING.md](CONTRIBUTING.md)
+first: the binding ground rules (G1–G5), the golden values that must survive
+refactors, and the one-command verification gate (`./scripts/verify.sh`).
+Security reports: see [SECURITY.md](SECURITY.md).
+
+Licensed under either of [Apache License 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option. Unless you explicitly state
+otherwise, any contribution intentionally submitted for inclusion in the work
+by you shall be dual licensed as above, without any additional terms or
+conditions.
