@@ -95,9 +95,12 @@ impl CanWorld {
         }
     }
 
-    /// Register a node on the bus. Order matters only for arbitration ties
-    /// (lowest index wins a tie on `CanId`, an edge case the reference
-    /// topology of one tester + one responder never hits in practice).
+    /// Register a node on the bus. Order matters only for arbitration ties:
+    /// when two nodes offer frames with the same `CanId` in one round the
+    /// lower registration index wins (the `<` in `poll_round` keeps the
+    /// first-seen winner). Two nodes contending the *same* id is itself a
+    /// bus-design fault in real CAN; this deterministic tie-break just keeps
+    /// the schedule reproducible if it happens.
     pub fn add_node(&mut self, node: Box<dyn CanNodeActor>) {
         self.nodes.push(node);
     }
@@ -206,9 +209,23 @@ impl CanWorld {
         let start = self.sched.now();
         self.sched.schedule(start, Job::PollNodes);
 
+        // Termination: on a bus with driving (finite-script) nodes, stop
+        // once *every* driving node is done — the correct rule for several
+        // contending testers as well as the reference one-tester topology.
+        // With no driving node, fall back to the legacy "stop once any node
+        // is done" so pre-existing single-tester traces are unchanged.
+        let has_driver = self.nodes.iter().any(|n| n.drives_termination());
         while let Some((_now, Job::PollNodes)) = self.sched.pop_due(deadline) {
             self.poll_round()?;
-            if self.nodes.iter().any(|n| n.done()) {
+            let stop = if has_driver {
+                self.nodes
+                    .iter()
+                    .filter(|n| n.drives_termination())
+                    .all(|n| n.done())
+            } else {
+                self.nodes.iter().any(|n| n.done())
+            };
+            if stop {
                 break;
             }
         }

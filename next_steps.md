@@ -45,13 +45,15 @@ whitepaper's central claim.
 - **Acceptance:** a real capture certified `CONFORMING`; whitepaper §7 moves
   from "specified" to "demonstrated".
 
-### 2. CAN arbitration/topology beyond the 2-node reference world
-`CanWorld`'s arbitration (lowest `CanId` wins) and termination rule
-(`nodes.iter().any(|n| n.done())`) are correct for the shipped reference
-topology of one tester + one responder, but are explicitly documented
-simplifications: real bit-level arbitration contention and a bus with more
-than one actively-driving node aren't exercised. Revisit if a CAN pilot
-needs a genuinely multi-node bus.
+### 2. CAN bit-level arbitration contention
+`CanWorld`'s multi-node topology now works (T13): a bus with several
+contending testers arbitrates in `CanId`-priority order and terminates once
+every driving node is done (`drives_termination()`), covered by
+`tests/can_multinode.rs`. What remains a documented simplification is
+*bit-level* arbitration — winners are picked by whole-frame `CanId` compare,
+not modeled bit by bit, and same-id contention is resolved by a
+deterministic registration-order tie-break rather than a real bus fault.
+Revisit only if a pilot needs true bit-timing arbitration fidelity.
 
 ## Non-goals (do not start)
 

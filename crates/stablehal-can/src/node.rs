@@ -27,11 +27,21 @@ pub trait CanNodeActor {
     fn on_frame(&mut self, frame: &CanFrame) -> bool;
     /// Whether this node has no more scripted work. Default `false`:
     /// passive/responder nodes (like [`CanRegisterNode`]) listen forever;
-    /// only a driving/tester node overrides this. `CanWorld::run_until`
-    /// stops once *any* node reports `true` — correct for the reference
-    /// topology of one tester + one passive responder; a bus with more than
-    /// one driving node would need a richer termination rule.
+    /// only a driving/tester node overrides this.
     fn done(&self) -> bool {
+        false
+    }
+
+    /// Whether this node *drives* bus termination — i.e. it has finite
+    /// scripted work whose completion should end the run. Default `false`:
+    /// passive responders never terminate the bus on their own. A tester
+    /// overrides this to `true` so `CanWorld::run_until` can stop once
+    /// *every* driving node is [`done`](CanNodeActor::done), which is the
+    /// correct rule for a multi-node bus (several contending testers) as
+    /// well as the reference one-tester topology. When no node drives,
+    /// `run_until` falls back to "stop once any node is done", preserving
+    /// legacy single-tester traces byte-for-byte.
+    fn drives_termination(&self) -> bool {
         false
     }
 }
@@ -154,6 +164,10 @@ impl CanNodeActor for CanScriptedNode {
 
     fn done(&self) -> bool {
         self.next >= self.script.len()
+    }
+
+    fn drives_termination(&self) -> bool {
+        true
     }
 }
 

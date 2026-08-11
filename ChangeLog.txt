@@ -4,6 +4,27 @@ Format: date — version — changes. Newest first.
 Semantics: "contract version" changes are called out explicitly, because they
 invalidate previously issued conformance certificates.
 
+2026-08-11 — 0.1.0 — T13: CAN multi-node topology (no contract change)
+------------------------------------------------------------
+Added (risk T8 follow-up — genuine multi-node CAN bus):
+  * `CanNodeActor::drives_termination()` (default `false`; `CanScriptedNode`
+    overrides to `true`). `CanWorld::run_until` now stops once *every*
+    driving (finite-script) node is `done`, the correct rule for a bus with
+    several contending testers. When no node drives, it falls back to the
+    legacy "stop once any node is done", so pre-existing single-tester
+    traces are byte-for-byte unchanged (golden hash unaffected — verified).
+  * `tests/can_multinode.rs` (3 tests): three simultaneous contenders win
+    arbitration in strict CanId-priority order (standard beats extended,
+    lower id first); every driving node completes before the bus stops
+    regardless of registration order; the multi-node schedule is
+    deterministic across repeated same-seed runs (trace-hash equality).
+Changed:
+  * `CanWorld::add_node` doc comment corrected — the same-id arbitration tie
+    (lower registration index wins) is now reachable with multiple testers;
+    documented as a deterministic tie-break for a real bus-design fault.
+No contract-version change: `CanContract` and every clause are untouched;
+this only enriches the reference world's termination + test coverage.
+
 2026-08-11 — 0.1.0 — T12: SPI envelope containment + docs unification +
 usability/legal polish (no contract change)
 ------------------------------------------------------------
