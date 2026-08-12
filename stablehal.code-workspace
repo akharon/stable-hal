@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "StableHAL",
+			"path": "."
+		},
+		{
+			"name": "stablehal-demo",
+			"path": "../stablehal-demo"
+		}
+	],
+	"settings": {}
+}
