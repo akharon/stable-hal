@@ -5,11 +5,15 @@ Read order for a cold start: [README.md](README.md) →
 [docs/](docs/) as needed. Binding engineering ground rules (G1–G5) and the
 golden values that must survive refactors live in **architecture.md §13**.
 
-## Done (M0–M4 + T1–T12)
+## Done (M0–M4 + T1–T14)
 
 The contract kernel, deterministic simulator, MODBUS RTU / I2C / LIN / SPI /
 CAN closed-loop pilots (all five now have a reference driver/device, a
-`stablehal-sim` world, and a conformance suite), boundary-biased sampling,
+`stablehal-sim` world, and a conformance suite), the IPC channel pilot (T14 —
+the first non-wire domain: request/response datagrams over a bounded queue,
+with scheduler-latency envelopes, backpressure, and peer death; closed loop
+in **simulation only** — no capture/certify path exists for it, see
+`docs/user-guide-ipc.md` §9), boundary-biased sampling,
 the `rmodbus` third-party adapter (10/13 suite pass, documented differences),
 the SHC1 capture format + `stablehal-certify` with round-trip verdict
 identity, the envelope-containment pilot (MODBUS + I2C + LIN + SPI; T12 added
@@ -45,7 +49,23 @@ whitepaper's central claim.
 - **Acceptance:** a real capture certified `CONFORMING`; whitepaper §7 moves
   from "specified" to "demonstrated".
 
-### 2. CAN bit-level arbitration contention
+### 2. IPC capture path (close the loop on a real socket)
+The IPC pilot (T14) is closed-loop **in simulation only**. The oracle is
+already `no_std` and judges any trace, but nothing produces a trace from a
+real channel, so no running process can be certified. This is the IPC
+analogue of item 1's gap, and it is cheaper: no hardware is needed.
+- Emit `IpcEvent`s with timestamps from a real channel — an `LD_PRELOAD`
+  interposer on `sendmsg`/`recvmsg`, or an eBPF probe. Lives outside
+  `crates/*` (G1), under `tools/`.
+- Assign an SHC1 contract code and extend `stablehal-certify` to judge IPC
+  captures, reusing the existing `judge`/`measure`/`contain` subcommands.
+- **Acceptance:** a capture from a real Unix-socket service certified, and
+  its measured `IPC-RESP-TIME` hull compared against `sim_envelope_sweep`
+  via the existing containment path. That comparison — CI's explored latency
+  region vs. a loaded production box's actual one — is the concrete payoff,
+  and the reason containment was built for this contract.
+
+### 3. CAN bit-level arbitration contention
 `CanWorld`'s multi-node topology now works (T13): a bus with several
 contending testers arbitrates in `CanId`-priority order and terminates once
 every driving node is done (`drives_termination()`), covered by

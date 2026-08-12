@@ -26,7 +26,7 @@ StableHAL's requirement set:
 | R3 | The **same oracle** judges simulated traces and hardware captures (`no_std`), closing the SW↔HW loop. |
 | R4 | A **conformance suite** is derived from the contract and can run against simulated and real devices alike. |
 | R5 | Every failure **replays byte-for-byte from its seed**. |
-| R6 | Pilot protocols: MODBUS RTU over UART (FC 03/06/10 subset, unicast) — full closed loop, incl. conformance suite and (simulation-validated) hardware capture path; I2C, LIN, SPI, and CAN — full closed loop, contract + reference driver/device + simulator world + DST-verified conformance suite. |
+| R6 | Pilot protocols: MODBUS RTU over UART (FC 03/06/10 subset, unicast) — full closed loop, incl. conformance suite and (simulation-validated) hardware capture path; I2C, LIN, SPI, and CAN — full closed loop, contract + reference driver/device + simulator world + DST-verified conformance suite; IPC (request/response datagrams over a bounded queue) — full closed loop in simulation, the first non-wire domain (§5.7). |
 
 ### 1.2 Quality goals (top 3)
 
@@ -105,6 +105,16 @@ CAN closed the DST loop in T8 (2026-07-11), joining MODBUS/I2C/LIN. The
 `embedded-hal` ecosystem bridge (`stablehal-embedded-hal`, spi/can
 feature-gated) continues to bridge both.
 
+**IPC (§5.7)** is the first pilot outside the wire-bus domain: a
+request/response datagram channel over a bounded queue (`stablehal-ipc`,
+`docs/user-guide-ipc.md`) — `IpcContract` (9 clauses), `ScriptedRequester`,
+`IpcResponderDevice` + 6-bug catalog, `stablehal_sim::ipc::IpcWorld`, a
+5-case conformance suite with real negative cases, `tests/ipc_dst.rs`,
+`tests/ipc_closed_loop.rs`, `tests/ipc_envelope.rs`. Closed loop **in
+simulation only**: there is no SHC1 capture path or `stablehal-certify`
+contract code for IPC, so a real socket cannot yet be certified (§5.7,
+user-guide-ipc.md §9).
+
 **Out of scope (documented, deliberate):** physical layer (EMI, analog
 margins, silicon errata outside the fault vocabulary); MODBUS broadcast
 (unit 0) and function codes beyond 03/06/10; I2C multi-master arbitration
@@ -140,12 +150,13 @@ flowchart TD
         LIN[stablehal-lin<br>LinContract, ScheduleMaster,<br>TableSlave]
         SPI[stablehal-spi<br>SpiContract, ScriptedSpiMaster,<br>SpiSlaveBugs]
         CAN[stablehal-can<br>CanContract, CanNodeActor,<br>CanScriptedNode, CanRegisterNode]
+        IPC[stablehal-ipc<br>IpcContract, ScriptedRequester,<br>IpcResponderDevice]
         EHAL[stablehal-embedded-hal<br>embedded-hal bridge, spi/can features]
         SHC1[stablehal-shc1<br>capture stream codec, no_std+alloc]
         CONFCORE[stablehal-conformance core<br>Case / Stimulus / Expected,<br>STANDARD_SUITE, i2c suite]
     end
     subgraph host["host only"]
-        SIM[stablehal-sim<br>Sim engine, i2c::I2cWorld,<br>lin::LinWorld, spi::SpiWorld,<br>can::CanWorld]
+        SIM[stablehal-sim<br>Sim engine, i2c::I2cWorld,<br>lin::LinWorld, spi::SpiWorld,<br>can::CanWorld, ipc::IpcWorld]
         RUNNER[stablehal-conformance::runner<br>TesterActor, SlaveActor,<br>ScriptedMaster, run_suite]
         EX1[examples/modbus-master<br>DST sweep CLI]
         EX2[examples/buggy-slave<br>closed-loop demo CLI]
@@ -158,6 +169,7 @@ flowchart TD
     LIN --> CONTRACT
     SPI --> CONTRACT
     CAN --> CONTRACT
+    IPC --> CONTRACT
     EHAL --> SPI
     EHAL --> CAN
     SHC1 --> CONTRACT
@@ -169,6 +181,7 @@ flowchart TD
     SIM --> LIN
     SIM --> SPI
     SIM --> CAN
+    SIM --> IPC
     CONFCORE --> MODBUS
     RUNNER --> CONFCORE
     RUNNER --> SIM
@@ -485,6 +498,65 @@ with a `sim_envelope` in `stablehal_conformance::spi::runner` and
 timing-envelope clause (frame duration is world-level jitter, not a contract
 bound), so there is no hull to contain (see §11).
 
+### 5.7 Level 2 — IPC channel (the first non-wire pilot)
+
+| Block | File | Responsibility |
+|---|---|---|
+| config/traits | [lib.rs](../crates/stablehal-ipc/src/lib.rs) | `IpcConfig` (three deployment profiles), `ChannelKind`, the closed `IpcFault` set, `Datagram`, `IpcRequester`/`IpcResponder` traits. |
+| `contract` | [contract.rs](../crates/stablehal-ipc/src/contract.rs) | `IpcContract`: 9 clauses over datagram-level events; per-direction judgement; per-correlation-id transaction table (fixed capacity, `no_std`). |
+| `requester` | [requester.rs](../crates/stablehal-ipc/src/requester.rs) | `ScriptedRequester`: the only reference driver in the workspace that must handle **backpressure** (retry-then-give-up, bounded). |
+| `device` | [device.rs](../crates/stablehal-ipc/src/device.rs) | `IpcResponderDevice` + a 6-entry `IpcResponderBugs` catalog, each mapping to exactly one clause. |
+| world | [ipc.rs](../crates/stablehal-sim/src/ipc.rs) | `IpcWorld`: bounded queue, seeded scheduler-latency draws, seeded peer-death injection. |
+
+**Why this belongs in a HAL-contract project.** The five prior pilots are
+wire buses: physical media, crystal-derived timing, electrical
+nondeterminism. IPC has none of that *when both processes are real-time
+scheduled on one host* — and that is precisely the case where it needs no
+help. The two deployments that do are the ones this contract targets:
+
+* **Non-real-time scheduling** makes responder turnaround a genuine
+  `min..=max` envelope (10 µs..=20 ms in `local_non_realtime()`) rather than
+  a fixed number — a 2000×-wide envelope where a wire bus has ±5%.
+* **Cross-host transport** widens delivery to milliseconds and adds fault
+  terms a local pipe cannot produce (duplicate, reorder).
+
+Both are bounded nondeterminism, so both are contractualizable by §4's
+strategy without modification. What genuinely *is* new, and what justifies a
+separate contract rather than a re-parameterized existing one:
+
+| Concern | Wire buses | IPC |
+|---|---|---|
+| Fault vocabulary | framing, parity, noise, overrun | peer death, backpressure, truncation, duplicate, reorder — **zero overlap** |
+| Endpoint liveness | a device is always present | a peer can die mid-transaction, permanently |
+| Flow control | none / clock stretching | bounded queue ⇒ backpressure is a first-class *legal* outcome |
+
+`IPC-BACKPRESSURE` and `IPC-PEER-DEATH` have no analogue in MODBUS/I2C/LIN/
+SPI/CAN. A MODBUS slave cannot cease to exist mid-frame; a SPI master is
+never told "try again later". Modeling those two is the substance of this
+pilot.
+
+**Granularity:** datagram-level — one whole message is one event. This is
+where IPC software contracts live (a caller sends a request and awaits a
+response; it never observes partial frames). Truncation is therefore an
+explicit fault term rather than a byte-level framing state.
+
+**`ChannelKind` gates clause applicability.** A local kernel queue cannot
+reorder or duplicate, so `IPC-ORDERING`/`IPC-NO-DUPLICATE` are not judged on
+`LocalQueue` — claiming to have tested them locally would be a false coverage
+claim. Symmetrically, a `Duplicate`/`Reordered` fault *reported* on a
+`LocalQueue` is flagged as a model error, since the transport cannot do that.
+
+**Containment (ADR-11)** covers `IPC-DELIVERY` and `IPC-RESP-TIME`. It earns
+more here than on any wire pilot: a wire hull is narrow and predictable, so
+containment nearly always holds; a scheduler-latency hull spans orders of
+magnitude and depends on machine load, so "did the sim explore where
+production runs?" is a genuinely open question. `sim_envelope_sweep(n)` folds
+n seeds into the comparison region, and `tests/ipc_envelope.rs` proves a
+still-conforming production hull outside the swept region is correctly
+reported *uncontained*.
+
+Full walkthrough, clause table, and limits: `docs/user-guide-ipc.md`.
+
 ---
 
 ## 6. Runtime View
@@ -685,6 +757,8 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | Closed loop (SPI) | [spi_dst.rs](../crates/stablehal-sim/tests/spi_dst.rs), [spi_closed_loop.rs](../crates/stablehal-conformance/tests/spi_closed_loop.rs) | Reference passes 50-seed envelope; `wrong_read_data` correctly *not* flagged (data-only bug); replay-exact; 3-case suite covers SPI-TRANSACTION/CS-TIMING/MODE-DISC/XFER-TIME/CS-MIN-IDLE. |
 | Closed loop (CAN) | [can_dst.rs](../crates/stablehal-sim/tests/can_dst.rs), [can_closed_loop.rs](../crates/stablehal-conformance/tests/can_closed_loop.rs) | Reference tester+responder pass a 50-seed envelope; `silent_no_ack` caught as CAN-ACK, `wrong_response_data`/`silent_no_response` correctly *not* flagged; replay-exact; 3-case suite covers CAN-ID-FIELD/CAN-RTR-DISC/CAN-ACK. |
 | Envelope containment | [envelope.rs](../crates/stablehal-conformance/tests/envelope.rs), [i2c_envelope.rs](../crates/stablehal-conformance/tests/i2c_envelope.rs), [lin_envelope.rs](../crates/stablehal-conformance/tests/lin_envelope.rs), [spi_envelope.rs](../crates/stablehal-conformance/tests/spi_envelope.rs), [containment.rs](../tools/stablehal-certify/tests/containment.rs) | `sim_envelope` measures every timing clause `RtuContract`/`I2cContract`/`LinContract`/`SpiContract` judge inside `step` on a conforming reference run, and asserts a nonempty hull per clause; a "hardware" capture matching the sim's own reference traffic is `COVERED`, one operating outside it (still contract-conforming) is `UNCOVERED` — proves the check has teeth, not just that it type-checks. |
+| Closed loop (IPC) | [ipc_dst.rs](../crates/stablehal-sim/tests/ipc_dst.rs), [ipc_closed_loop.rs](../crates/stablehal-conformance/tests/ipc_closed_loop.rs) | Reference pair passes a 50-seed envelope on all three deployment profiles; `wrong_correlation`/`never_answer` caught with the exact clause across 10 seeds each; `wrong_payload` correctly *not* flagged by the contract but caught by the property check on `requester_outcomes()`; backpressure exercised and survived; seeded peer death surfaced (not hung) and replay-exact; the scheduling envelope is asserted to be actually wide (>4× spread in run duration across seeds), so a collapse of envelope exploration fails loudly. |
+| Envelope containment (IPC) | [ipc_envelope.rs](../crates/stablehal-conformance/tests/ipc_envelope.rs) | Both timing clauses produce nonempty hulls; measured hulls sit inside their declared envelopes (proving the ADR-11 side channel has not drifted from the judging path); a 50-seed sweep hull spans >10×; a still-conforming "production" hull beyond the swept region is correctly reported **uncontained**. |
 | Capture round-trip | [round_trip.rs](../crates/stablehal-shc1/tests/round_trip.rs) | Sim-side oracle verdict == certifier-from-SHC1-capture verdict, for the reference and all 6 `SlaveBugs` — validates the hardware-capture path before any firmware exists. |
 | Measurement | example CLIs | 10k-seed sweep, replay check — numbers feed the whitepaper. |
 
@@ -743,6 +817,7 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | Term | Meaning |
 |---|---|
 | **ADU / PDU** | MODBUS Application Data Unit (unit + PDU + CRC) / Protocol Data Unit (fc + data). |
+| **Backpressure** | IPC: a send rejected because the bounded receive queue is full. A *legal* outcome the sender must survive by retrying or shedding load — not a failure (`IPC-BACKPRESSURE`). |
 | **Bounded nondeterminism** | Real-world variance expressed as an explicit contract envelope (`TimeBound`) or closed fault set, so it can be sampled and judged. |
 | **Break field / break delimiter** | LIN: the master's dominant-then-recessive preamble (>=13 bit times low, >=1 bit time high) that opens every frame. |
 | **Certificate** | JSON verdict emitted by `stablehal-certify`: contract id/version, UART framing, derived timing envelope, capture record/gap counts, trace hash, verdict (v1: `judge`); v2 additionally reports per-clause containment (`contain`). |
@@ -757,6 +832,7 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | **Oracle** | Folds a timestamped event trace through a contract; yields conformance or the breached clause. |
 | **PID (Protected Identifier)** | LIN: the 6-bit frame ID plus 2 parity bits computed per the LIN 2.2A formula, sent as one byte after sync. |
 | **Poisoned frame** | Frame stripped of protocol meaning after a waived (unjudged) breach — models receivers discarding garbage. |
+| **Scheduling-latency envelope** | IPC: the `min..=max` band a non-real-time responder's turnaround falls in, dominated by OS scheduler wakeup rather than by the work itself. Orders of magnitude wider than any wire-bus envelope. |
 | **Schedule table** | LIN: the fixed, TDMA-ordered list of frame IDs the master polls in sequence — LIN has no arbitration, so this replaces bus contention entirely. |
 | **SHC1** | The binary capture stream format (`stablehal-shc1`): header + fixed-size records, resync-tolerant, judged by the same oracle as simulation. |
 | **t1.5 / t3.5** | MODBUS RTU character-time multiples bounding intra-frame gaps / delimiting frames (fixed 750 µs / 1.75 ms above 19200 baud). |
@@ -802,6 +878,7 @@ review blocker; a change that legitimately alters a golden value must say so in
 | lin | 0.1 | 9 | unassigned | yes |
 | spi | — | 7 | unassigned | yes |
 | can | — | 9 | unassigned | yes |
+| ipc | — | 9 | unassigned | yes |
 
 The ultimate source of truth is the `Clause` registry inside each protocol
 crate (`clauses()`); this table is the single documentation index for it (§5.1

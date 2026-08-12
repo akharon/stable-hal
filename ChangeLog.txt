@@ -4,6 +4,73 @@ Format: date — version — changes. Newest first.
 Semantics: "contract version" changes are called out explicitly, because they
 invalidate previously issued conformance certificates.
 
+2026-08-12 — 0.1.0 — T14: IPC channel pilot — the first non-wire domain
+------------------------------------------------------------
+Rationale: IPC between two real-time-scheduled processes on one host has
+little nondeterminism worth contractualizing. Two deployments do: processes
+under a non-real-time scheduler (turnaround becomes a 10us..=20ms envelope,
+2000x wider than any wire bus's) and cross-host channels (delivery becomes a
+millisecond envelope, and duplicate/reorder become possible). Both are
+bounded nondeterminism, so both fit the existing strategy unchanged.
+
+Added:
+  * `crates/stablehal-ipc` (new, no_std, zero deps per G1): `IpcContract`
+    with 9 clauses — IPC-SEQ, IPC-RESP-TIME, IPC-DELIVERY, IPC-CORRELATION,
+    IPC-MSG-MAXLEN, IPC-BACKPRESSURE, IPC-NO-DUPLICATE, IPC-PEER-DEATH,
+    IPC-ORDERING. Datagram granularity (one message = one event). Closed
+    fault vocabulary `IpcFault {PeerGone, WouldBlock, Truncated, Duplicate,
+    Reordered}` — zero overlap with UartError, which is the argument for a
+    separate contract rather than a re-parameterized existing one.
+  * Three deployment profiles: `IpcConfig::local_non_realtime()`,
+    `local_realtime()`, `cross_host()`. `ChannelKind` gates the ordering and
+    duplicate clauses: they are not judged on a LocalQueue (the kernel
+    guarantees them, so claiming local coverage would be a false claim), and
+    a Duplicate/Reordered fault reported on a LocalQueue is flagged as a
+    model error.
+  * `ScriptedRequester` — the only reference driver in the workspace that
+    must handle backpressure (bounded retry, then an honest GaveUp result,
+    not a violation). `IpcResponderDevice` + `IpcResponderBugs` (6 entries,
+    each mapping to exactly one clause; `wrong_payload` deliberately maps to
+    none — payload correctness is an application obligation, not a channel
+    one, matching I2C/SPI's `wrong_read_data` precedent).
+  * `stablehal_sim::ipc::IpcWorld`: bounded queue with real backpressure,
+    seeded scheduler-latency draws, seeded peer-death injection that
+    surfaces PeerGone *before* PeerExit (the ordering IPC-PEER-DEATH
+    requires). Added `IpcRequesterActor::outcomes()` (defaulted) and
+    `IpcWorld::requester_outcomes()` so property checks can see payloads the
+    channel contract deliberately does not judge.
+  * Envelope containment (ADR-11) on IPC-DELIVERY and IPC-RESP-TIME via
+    `step_measured`, plus `sim_envelope`/`sim_envelope_sweep` in
+    `stablehal_conformance::ipc::runner`. Containment earns more here than
+    on any wire pilot: a scheduler-latency hull spans orders of magnitude
+    and depends on machine load, so "did the sim explore where production
+    runs?" is genuinely open.
+  * `stablehal_conformance::ipc`: 5-case STANDARD_SUITE with 3 positive and
+    2 real negative cases. Each case declares `expect_breach`; a negative
+    case whose bug stops firing is reported as a failure, which is itself
+    tested.
+  * Tests (+25): `crates/stablehal-ipc` unit tests (24, covering every
+    clause positively and negatively per G3), `tests/ipc_dst.rs` (15),
+    `tests/ipc_closed_loop.rs` (4), `tests/ipc_envelope.rs` (6).
+    `the_scheduling_envelope_is_actually_wide` asserts run duration spreads
+    >4x across seeds, so a collapse of envelope exploration fails loudly
+    rather than silently reducing DST to a single-path test.
+  * `docs/user-guide-ipc.md`; architecture.md §5.7, §3.2, §8.4, §12, §13.3.
+  * Facade: `ipc` feature + prelude exports; `scripts/verify.sh` feature
+    matrix extended to cover it.
+
+Known limits (stated, not worked around): no SHC1 capture path or
+stablehal-certify contract code for IPC, so a real socket cannot yet be
+certified — the pilot's claim is "closed loop in simulation" only. Single
+requester/single responder (no fan-in). MAX_TRACKED=16 concurrent
+correlation ids. IpcFault::Truncated is declared but never injected by the
+reference world (same honesty pattern as SPI-DATA-VALID / CAN-BIT-STUFFING).
+
+No contract-version change to any existing protocol: MODBUS/I2C/LIN/SPI/CAN
+contracts and clauses are untouched. Golden values verified intact — replay
+hash 95f0e863d22deaa9, 10k-seed sweep 0 violations across 9,876,528 events,
+13/13 reference conformance cases. `./scripts/verify.sh` exits 0.
+
 2026-08-11 — 0.1.0 — T13: CAN multi-node topology (no contract change)
 ------------------------------------------------------------
 Added (risk T8 follow-up — genuine multi-node CAN bus):

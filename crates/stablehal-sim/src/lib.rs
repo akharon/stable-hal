@@ -65,6 +65,7 @@
 
 pub mod can;
 pub mod i2c;
+pub mod ipc;
 pub mod lin;
 mod sched;
 pub mod spi;

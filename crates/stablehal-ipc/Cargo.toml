@@ -1,0 +1,10 @@
+[package]
+name = "stablehal-ipc"
+description = "IPC datagram-channel contract (request/response over a bounded queue: scheduler-latency envelopes, backpressure, peer death, duplicate/reorder) + poll-driven requester/responder HAL traits, all no_std"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+stablehal-contract = { workspace = true }

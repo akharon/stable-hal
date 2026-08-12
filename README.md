@@ -82,7 +82,7 @@ corruptions in ~10 s; same-seed replay hashes are identical
 
 | You have… | Do this | Guide |
 |---|---|---|
-| A **protocol driver** (master/slave state machine) | Write it against the `UartBus` / `I2cMaster` / `LinBus` trait + a `now: Nanos` tick — no `std`, no clock, no executor. Adapt it into `stablehal_sim::Actor` (a ~10-line wrapper) and sweep it under DST. | [uart](docs/user-guide-uart.md), [simulator](docs/user-guide-simulator.md) |
+| A **protocol driver** (master/slave state machine) | Write it against the `UartBus` / `I2cMaster` / `LinBus` / `IpcRequester` trait + a `now: Nanos` tick — no `std`, no clock, no executor. Adapt it into `stablehal_sim::Actor` (a ~10-line wrapper) and sweep it under DST. | [uart](docs/user-guide-uart.md), [simulator](docs/user-guide-simulator.md) |
 | A **third-party stack** to evaluate | Wrap it in an `Actor` that pumps bytes through the HAL boundary and run `STANDARD_SUITE` against it, unmodified. `adapters/rmodbus-slave` is a complete worked example. | [conformance](docs/user-guide-conformance.md) |
 | A **hardware device** to certify | Capture wire traffic as an SHC1 stream and judge it with `stablehal-certify` — the *same* oracle that judged simulation. | [containment](docs/user-guide-containment.md) |
 
@@ -129,6 +129,7 @@ crate, e.g. `cargo doc --open -p stablehal-sim`).
 | [docs/user-guide-lin.md](docs/user-guide-lin.md) | LIN schedule-table contract, `LinWorld` |
 | [docs/user-guide-spi.md](docs/user-guide-spi.md) | SPI chip-select/mode/transfer-timing contract, register-pointer device, `SpiWorld` |
 | [docs/user-guide-can.md](docs/user-guide-can.md) | CAN broadcast-node contract, the `CanNodeActor` topology, the request/response convention layered on top, `CanWorld` |
+| [docs/user-guide-ipc.md](docs/user-guide-ipc.md) | IPC channel contract: why non-RT scheduling and cross-host transport make IPC contractualizable, backpressure, peer death, `IpcWorld` |
 | [docs/user-guide-conformance.md](docs/user-guide-conformance.md) | Running/reading the suite, certifying a slave, adding cases |
 | [docs/user-guide-containment.md](docs/user-guide-containment.md) | Envelope containment: proving the sim exercised where the hardware lives |
 | [next_steps.md](next_steps.md) | Open backlog (hardware bring-up, remaining suites) |
@@ -151,9 +152,10 @@ external dependencies** (rule G1); third-party code lives only under
 | `crates/stablehal-lin` | LIN contract (9 clauses), schedule master, table slave | ✓ |
 | `crates/stablehal-spi` | SPI wire contract (7 clauses), register-pointer device, scripted master | ✓ |
 | `crates/stablehal-can` | CAN 2.0B data-link contract (9 clauses), broadcast-node model (`CanNodeActor`), scripted tester + register responder | ✓ |
+| `crates/stablehal-ipc` | IPC channel contract (9 clauses): request/response datagrams over a bounded queue — scheduler-latency envelopes, backpressure, peer death | ✓ |
 | `crates/stablehal-embedded-hal` | Bridge to the `embedded-hal` ecosystem (spi/can features) | ✓ |
 | `crates/stablehal-shc1` | SHC1 binary capture stream codec | ✓ (+alloc) |
-| `crates/stablehal-sim` | Deterministic simulator + DST harness; `i2c`/`lin`/`spi`/`can` worlds | host |
+| `crates/stablehal-sim` | Deterministic simulator + DST harness; `i2c`/`lin`/`spi`/`can`/`ipc` worlds | host |
 | `crates/stablehal-conformance` | Conformance suite (cases `no_std`; runner behind default `runner` feature) | core ✓ |
 | `tools/stablehal-certify` | SHC1 capture → certificate / envelope-containment CLI | host |
 | `adapters/rmodbus-slave` | Third-party `rmodbus` stack behind `UartBus` (whitepaper E5) | host |
@@ -189,16 +191,21 @@ replay command.
 
 Closed-loop pilots (contract + reference driver/device + simulator world + DST
 closed-loop test, each with its own conformance suite): **MODBUS RTU, I2C,
-LIN, SPI, CAN**. MODBUS additionally has a simulation-validated hardware
-capture/certify path (SHC1 + `stablehal-certify`); envelope containment
-(proving the DST loop actually exercised the timing region a captured trace
-occupies) is piloted on MODBUS, I2C, and LIN.
+LIN, SPI, CAN** — and, since T14, **IPC**, the first non-wire domain
+(request/response datagrams over a bounded queue; see
+[docs/user-guide-ipc.md](docs/user-guide-ipc.md) for why scheduler latency and
+cross-host transport make IPC contractualizable). MODBUS additionally has a
+simulation-validated hardware capture/certify path (SHC1 +
+`stablehal-certify`); envelope containment (proving the DST loop actually
+exercised the timing region a captured trace occupies) covers MODBUS, I2C,
+LIN, SPI, and IPC.
 
 Open work is tracked in [next_steps.md](next_steps.md) and architecture.md §11
-(risks/debt): on-target hardware certification (`targets/rp2040`, drafted but
-unverified) is the main one — CAN's multi-node topology is a smaller,
-unscheduled follow-up. (Envelope containment now covers MODBUS, I2C, LIN, and
-SPI; it does not apply to CAN, which has no timing-envelope clause.)
+(risks/debt). Two loops are open on the *capture* side: on-target hardware
+certification (`targets/rp2040`, drafted but unverified) and an IPC capture
+path (the oracle is ready; nothing yet produces a trace from a real socket).
+CAN's bit-level arbitration is a smaller, unscheduled follow-up. Envelope
+containment does not apply to CAN, which has no timing-envelope clause.
 
 ## Contributing & license
 

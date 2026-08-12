@@ -12,6 +12,7 @@ members = [
     "crates/stablehal-spi",
     "crates/stablehal-can",
     "crates/stablehal-lin",
+    "crates/stablehal-ipc",
     "crates/stablehal-embedded-hal",
     "examples/modbus-master",
     "examples/buggy-slave",
@@ -39,4 +40,5 @@ stablehal-shc1 = { path = "crates/stablehal-shc1" }
 stablehal-spi = { path = "crates/stablehal-spi" }
 stablehal-can = { path = "crates/stablehal-can" }
 stablehal-lin = { path = "crates/stablehal-lin" }
+stablehal-ipc = { path = "crates/stablehal-ipc" }
 stablehal-embedded-hal = { path = "crates/stablehal-embedded-hal" }

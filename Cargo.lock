@@ -93,6 +93,7 @@ dependencies = [
  "stablehal-conformance",
  "stablehal-contract",
  "stablehal-i2c",
+ "stablehal-ipc",
  "stablehal-lin",
  "stablehal-modbus",
  "stablehal-shc1",
@@ -127,6 +128,7 @@ dependencies = [
  "stablehal-can",
  "stablehal-contract",
  "stablehal-i2c",
+ "stablehal-ipc",
  "stablehal-lin",
  "stablehal-modbus",
  "stablehal-sim",
@@ -154,6 +156,13 @@ dependencies = [
 
 [[package]]
 name = "stablehal-i2c"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+]
+
+[[package]]
+name = "stablehal-ipc"
 version = "0.1.0"
 dependencies = [
  "stablehal-contract",
@@ -192,6 +201,7 @@ dependencies = [
  "stablehal-can",
  "stablehal-contract",
  "stablehal-i2c",
+ "stablehal-ipc",
  "stablehal-lin",
  "stablehal-spi",
  "stablehal-uart",

@@ -14,7 +14,7 @@ cargo test
 
 echo "=== 3b. facade feature matrix (no_std-clean + no prelude clashes) ==="
 cargo check -p stablehal --no-default-features
-cargo check -p stablehal --no-default-features --features "i2c lin spi can shc1"
+cargo check -p stablehal --no-default-features --features "i2c lin spi can ipc shc1"
 cargo check -p stablehal --all-features
 
 echo "=== 3c. cargo doc (broken intra-doc links fail the build) ==="

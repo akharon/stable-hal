@@ -13,3 +13,4 @@ stablehal-i2c = { workspace = true }
 stablehal-lin = { workspace = true }
 stablehal-spi = { workspace = true }
 stablehal-can = { workspace = true }
+stablehal-ipc = { workspace = true }

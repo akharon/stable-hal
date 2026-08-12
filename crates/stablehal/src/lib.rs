@@ -15,6 +15,8 @@ pub use stablehal_can as can;
 pub use stablehal_conformance as conformance;
 #[cfg(feature = "i2c")]
 pub use stablehal_i2c as i2c;
+#[cfg(feature = "ipc")]
+pub use stablehal_ipc as ipc;
 #[cfg(feature = "lin")]
 pub use stablehal_lin as lin;
 #[cfg(feature = "modbus")]
@@ -59,6 +61,15 @@ pub mod prelude {
     };
     #[cfg(all(feature = "i2c", feature = "sim"))]
     pub use stablehal_sim::i2c::{I2cMasterAdapter, I2cWorld, I2cWorldConfig};
+
+    #[cfg(feature = "ipc")]
+    pub use stablehal_ipc::{
+        ChannelKind, CorrelationId, Datagram, IpcConfig, IpcContract, IpcEvent, IpcFault,
+        IpcRequester, IpcResponder, IpcResponderBugs, IpcResponderDevice, IpcSendError, IpcStep,
+        IpcStepOutcome, ScriptedRequester,
+    };
+    #[cfg(all(feature = "ipc", feature = "sim"))]
+    pub use stablehal_sim::ipc::{IpcRequesterAdapter, IpcWorld, IpcWorldConfig};
 
     #[cfg(feature = "lin")]
     pub use stablehal_lin::{
