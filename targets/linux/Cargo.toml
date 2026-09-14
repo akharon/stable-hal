@@ -16,6 +16,7 @@ stablehal-contract = { path = "../../crates/stablehal-contract" }
 stablehal-uart = { path = "../../crates/stablehal-uart" }
 stablehal-modbus = { path = "../../crates/stablehal-modbus" }
 stablehal-shc1 = { path = "../../crates/stablehal-shc1" }
+stablehal-spi = { path = "../../crates/stablehal-spi" }
 
 libc = "0.2"
 
@@ -26,3 +27,7 @@ path = "src/bin/tester.rs"
 [[bin]]
 name = "linux-dut-slave"
 path = "src/bin/dut_slave.rs"
+
+[[bin]]
+name = "linux-spi-tester"
+path = "src/bin/spi_tester.rs"

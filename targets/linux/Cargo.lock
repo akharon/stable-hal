@@ -27,6 +27,7 @@ dependencies = [
  "stablehal-contract",
  "stablehal-modbus",
  "stablehal-shc1",
+ "stablehal-spi",
  "stablehal-uart",
 ]
 
@@ -46,6 +47,13 @@ dependencies = [
  "stablehal-ipc",
  "stablehal-modbus",
  "stablehal-uart",
+]
+
+[[package]]
+name = "stablehal-spi"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
 ]
 
 [[package]]
