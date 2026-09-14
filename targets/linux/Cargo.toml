@@ -1,0 +1,28 @@
+[workspace]
+
+[package]
+name = "stablehal-linux"
+description = "Linux host target: UartBus over a real termios serial port (/dev/ttyUSB*, /dev/ttyACM*), plus tester+DUT fixture binaries that stream an SHC1 capture — same shape as targets/rp2040, but runnable today over a USB-UART loopback with no board bring-up."
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# Standalone Cargo.toml (not a member of the host workspace), matching
+# targets/rp2040's precedent: this needs `libc` for raw termios control,
+# which has no place in the no_std, zero-dep `crates/*` workspace (G1).
+
+[dependencies]
+stablehal-contract = { path = "../../crates/stablehal-contract" }
+stablehal-uart = { path = "../../crates/stablehal-uart" }
+stablehal-modbus = { path = "../../crates/stablehal-modbus" }
+stablehal-shc1 = { path = "../../crates/stablehal-shc1" }
+
+libc = "0.2"
+
+[[bin]]
+name = "linux-tester"
+path = "src/bin/tester.rs"
+
+[[bin]]
+name = "linux-dut-slave"
+path = "src/bin/dut_slave.rs"
