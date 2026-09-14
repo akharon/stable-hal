@@ -24,6 +24,8 @@
 //! non-blocking `try_read` semantics every other `UartBus` impl in this
 //! project provides.
 
+pub mod can;
+pub mod i2c;
 pub mod spi;
 
 use std::ffi::CString;

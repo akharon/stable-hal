@@ -17,6 +17,8 @@ stablehal-uart = { path = "../../crates/stablehal-uart" }
 stablehal-modbus = { path = "../../crates/stablehal-modbus" }
 stablehal-shc1 = { path = "../../crates/stablehal-shc1" }
 stablehal-spi = { path = "../../crates/stablehal-spi" }
+stablehal-i2c = { path = "../../crates/stablehal-i2c" }
+stablehal-can = { path = "../../crates/stablehal-can" }
 
 libc = "0.2"
 
@@ -31,3 +33,11 @@ path = "src/bin/dut_slave.rs"
 [[bin]]
 name = "linux-spi-tester"
 path = "src/bin/spi_tester.rs"
+
+[[bin]]
+name = "linux-i2c-tester"
+path = "src/bin/i2c_tester.rs"
+
+[[bin]]
+name = "linux-can-loopback"
+path = "src/bin/can_loopback.rs"

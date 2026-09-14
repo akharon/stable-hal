@@ -9,8 +9,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "stablehal-can"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+]
+
+[[package]]
 name = "stablehal-contract"
 version = "0.1.0"
+
+[[package]]
+name = "stablehal-i2c"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+]
 
 [[package]]
 name = "stablehal-ipc"
@@ -24,7 +38,9 @@ name = "stablehal-linux"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "stablehal-can",
  "stablehal-contract",
+ "stablehal-i2c",
  "stablehal-modbus",
  "stablehal-shc1",
  "stablehal-spi",
