@@ -1,13 +1,13 @@
 //! Self-loopback smoke test: transmits one frame on a SocketCAN interface
-//! and reads it back, using the unmodified `CanController` trait — good for
-//! `vcan0` (the kernel's virtual CAN driver loops every transmitted frame
-//! back to the local socket, no second node or physical bus required).
+//! and reads it back on the *same* socket, using the unmodified
+//! `CanController` trait — good for `vcan0` (no second node or physical bus
+//! required), and opens with `recv_own_msgs = true` (`CAN_RAW_RECV_OWN_MSGS`)
+//! so this one socket sees its own transmission — off by default, since a
+//! real bus doesn't echo your own TX back to you as a separate RX event
+//! either, and a real two-node setup should leave it off (see
+//! `SocketCan::open`'s doc comment).
 //!
-//! Usage: `linux-can-loopback <interface>` (e.g. `vcan0`, or a real `can0`
-//! wired to a transceiver with another node also listening — on a real
-//! bus your own transmitted frame does not loop back to you the way
-//! `vcan0` does, so this smoke test's "receive our own frame" assumption
-//! is `vcan`-specific).
+//! Usage: `linux-can-loopback <interface>` (e.g. `vcan0`)
 //!
 //! Setup for `vcan0`:
 //!   sudo modprobe vcan
@@ -22,7 +22,7 @@ use stablehal_linux::can::SocketCan;
 fn main() {
     let ifname = std::env::args().nth(1).expect("usage: linux-can-loopback <interface>");
 
-    let mut bus = SocketCan::open(&ifname).expect("open SocketCAN interface");
+    let mut bus = SocketCan::open(&ifname, true).expect("open SocketCAN interface");
 
     let frame = CanFrame {
         id: CanId::Standard(0x123),

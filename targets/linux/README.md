@@ -4,12 +4,10 @@ Linux counterpart to `targets/rp2040`: the unmodified reference drivers from
 `stablehal-modbus`/`stablehal-spi`/`stablehal-i2c`/`stablehal-can`, running
 against real Linux bus devices instead of the simulator's virtual wire, via
 four `UartBus`/`SpiMaster`/`I2cMaster`/`CanController` implementations. No
-board bring-up needed for the UART port — it's **verified working** (see
-below), unlike `targets/rp2040` which is still drafted/unflashed (T9). The
-SPI/I2C/CAN ports compile clean but are **unverified against real or virtual
-hardware this session** (no SPI/I2C peripheral on hand, no passwordless
-`sudo` available to create a `vcan0` interface) — treat them like
-`targets/rp2040` until confirmed.
+board bring-up needed — UART and CAN are **verified working** (see below),
+unlike `targets/rp2040` which is still drafted/unflashed (T9). SPI/I2C
+compile clean but are **unverified against real hardware** (none on hand
+this session) — treat those two like `targets/rp2040` until confirmed.
 
 Standalone Cargo project (not a workspace member), matching `targets/rp2040`'s
 precedent: needs `libc` for termios control, which has no place in the
@@ -42,7 +40,7 @@ precedent: needs `libc` for termios control, which has no place in the
   `I2cDevMaster`, an `i2c-dev` port using the `I2C_RDWR` combined-transfer
   ioctl. Needs a real I2C peripheral at the given address.
 
-### CAN (`src/can.rs`, unverified — but designed to self-verify on `vcan0`)
+### CAN (`src/can.rs`, verified)
 
 * **`linux-can-loopback <interface>`** — transmits one frame and reads it
   back via `SocketCan`, a real non-blocking `AF_CAN`/`CAN_RAW` socket port
@@ -55,14 +53,13 @@ precedent: needs `libc` for termios control, which has no place in the
   sudo ip link set up vcan0
   linux-can-loopback vcan0   # prints OK
   ```
-  Not run this session (no passwordless `sudo` in the sandbox to create
-  `vcan0`) — next thing to confirm.
 
-## Verified loop (2026-09-14)
+## Verified loops (2026-09-14)
 
-Run over a PTY pair (`socat -d -d pty,raw,echo=0 pty,raw,echo=0`) — good for
-proving protocol/framing correctness over real syscalls, though PTYs don't
-enforce real bit-time pacing, so `UART-CHAR-TIME` timing isn't meaningfully
+**UART / MODBUS RTU**, over a PTY pair
+(`socat -d -d pty,raw,echo=0 pty,raw,echo=0`) — good for proving
+protocol/framing correctness over real syscalls, though PTYs don't enforce
+real bit-time pacing, so `UART-CHAR-TIME` timing isn't meaningfully
 exercised this way:
 
 ```sh
@@ -73,6 +70,23 @@ cargo run -p stablehal-certify -- judge capture.shc1 --timeout-ms 50
 ```
 
 Result: `"verdict": "CONFORMING"`, 30 records, 0 gaps.
+
+**CAN**, over `vcan0`:
+
+```sh
+sudo modprobe vcan && sudo ip link add dev vcan0 type vcan && sudo ip link set up vcan0
+cargo build --bin linux-can-loopback
+./target/debug/linux-can-loopback vcan0
+```
+
+Result: `OK` — frame sent and received back with matching id/payload.
+First run failed (`timed out waiting for loopback frame`): a bare `AF_CAN`
+socket does not receive frames it transmitted itself even on `vcan`
+(`CAN_RAW_RECV_OWN_MSGS` is off by default, correctly — a real transceiver
+doesn't hear its own TX as a separate RX event either). Fixed by adding a
+`recv_own_msgs` parameter to `SocketCan::open`, on only for this
+single-socket self-test; a real two-node setup (tester + DUT, separate
+sockets) should leave it off.
 
 ## Real hardware
 
@@ -105,7 +119,3 @@ designed for, without waiting on `targets/rp2040` (T9)'s unresolved
 * CAN error-frame decoding is coarse: every kernel error frame currently
   maps to `CanError::BitError` rather than distinguishing stuff/form/ack/
   CRC errors (would need decoding `linux/can/error.h`'s data-byte layout).
-* Termios baud table (`baud_constant`) covers common rates up to 230400;
-  arbitrary baud (`termios2`/`BOTHER`) not implemented.
-* `UartError` decoding is coarse: any unexpected `read()` errno is reported
-  as `Overrun` rather than distinguishing framing/parity/noise.

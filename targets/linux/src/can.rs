@@ -28,6 +28,8 @@ use stablehal_can::{CanControllerState, CanController, CanError, CanFrame, CanFr
 const AF_CAN: i32 = 29;
 const PF_CAN: i32 = AF_CAN;
 const CAN_RAW: i32 = 1;
+const SOL_CAN_RAW: i32 = 101;
+const CAN_RAW_RECV_OWN_MSGS: i32 = 4;
 const CAN_EFF_FLAG: u32 = 0x8000_0000;
 const CAN_RTR_FLAG: u32 = 0x4000_0000;
 const CAN_ERR_FLAG: u32 = 0x2000_0000;
@@ -70,10 +72,36 @@ impl SocketCan {
     /// `"can0"`). Set non-blocking so `try_transmit`/`try_receive` never
     /// stall the poll loop, matching every other `UartBus`/`SpiMaster`-style
     /// port in this project.
-    pub fn open(ifname: &str) -> io::Result<Self> {
+    ///
+    /// `recv_own_msgs` sets `CAN_RAW_RECV_OWN_MSGS`, off by default in the
+    /// kernel: a CAN_RAW socket normally does **not** see frames it just
+    /// transmitted, even on `vcan` (this is correct real-bus behavior — a
+    /// real transceiver doesn't hear its own TX as a separate RX event
+    /// either). Pass `true` only for a single-socket self-test like
+    /// `linux-can-loopback`; a real two-node setup (tester socket + DUT
+    /// socket, each on their own fd) should leave this `false`.
+    pub fn open(ifname: &str, recv_own_msgs: bool) -> io::Result<Self> {
         let fd = unsafe { libc::socket(PF_CAN, libc::SOCK_RAW, CAN_RAW) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
+        }
+
+        if recv_own_msgs {
+            let enable: i32 = 1;
+            let ret = unsafe {
+                libc::setsockopt(
+                    fd,
+                    SOL_CAN_RAW,
+                    CAN_RAW_RECV_OWN_MSGS,
+                    &enable as *const i32 as *const _,
+                    mem::size_of::<i32>() as u32,
+                )
+            };
+            if ret < 0 {
+                let err = io::Error::last_os_error();
+                unsafe { libc::close(fd) };
+                return Err(err);
+            }
         }
 
         let ifindex = interface_index(fd, ifname)?;
