@@ -10,6 +10,7 @@ license.workspace = true
 stablehal-contract = { workspace = true }
 stablehal-uart = { workspace = true }
 stablehal-modbus = { workspace = true }
+stablehal-ipc = { workspace = true }
 
 [dev-dependencies]
 stablehal-sim = { workspace = true }

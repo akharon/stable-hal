@@ -20,3 +20,6 @@ targets/*/target/
 
 # Local scratch/output files that sometimes land at the repo root
 *.shc1
+
+# PAiRS derived index - disposable, never committed
+.pairs/

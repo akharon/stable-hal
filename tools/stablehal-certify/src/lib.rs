@@ -4,6 +4,7 @@
 
 pub mod contain;
 pub mod envelope;
+pub mod merge_ipc;
 
 pub fn arg_value(args: &[String], key: &str) -> Option<String> {
     args.iter()

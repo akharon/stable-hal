@@ -33,17 +33,43 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use stablehal_contract::{Nanos, TraceEvent};
+use stablehal_ipc::contract::IpcEvent;
+use stablehal_ipc::{CorrelationId, IpcFault};
 use stablehal_modbus::contract::{Dir, RtuEvent};
 use stablehal_uart::{LineEvent, Parity, UartConfig, UartError};
 
 pub const MAGIC: u32 = 0x3143_4853;
 pub const CONTRACT_RTU_V0_1: u16 = 0x0001;
+/// IPC channel contract, v0.1 (architecture.md §13.3). Assigned after
+/// `i2c` (0x0003) and deliberately ahead of `lin`/`spi`/`can`, which remain
+/// unassigned — precedented by `i2c`'s own out-of-pilot-order reservation.
+pub const CONTRACT_IPC_V0_1: u16 = 0x0004;
 pub const FLAG_SELF_REPORT: u16 = 1 << 0;
 pub const FLAG_OBSERVER: u16 = 1 << 1;
+/// IPC header only: set when this stream was captured on the responder side
+/// of the channel; clear for the requester side. Lets `merge-ipc` verify it
+/// was handed one capture from each side rather than two of the same side.
+pub const FLAG_IPC_RESPONDER_SIDE: u16 = 1 << 2;
 
 pub const HEADER_LEN: usize = 16;
 pub const RECORD_LEN: usize = 12;
 pub const SYNC: u8 = 0xA5;
+
+/// Read the `contract` field (bytes 4..6) out of any SHC1 stream's header
+/// without committing to a particular record shape. Every header variant
+/// (RTU's [`Header`], IPC's [`IpcHeader`]) agrees on `magic`/`contract`/
+/// `flags` occupying the first 8 bytes — this is what lets a host tool
+/// dispatch to the right parser before it knows which one to call.
+pub fn peek_contract_code(bytes: &[u8]) -> Result<u16, ShcError> {
+    if bytes.len() < 6 {
+        return Err(ShcError::Truncated);
+    }
+    let magic = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+    if magic != MAGIC {
+        return Err(ShcError::BadMagic);
+    }
+    Ok(u16::from_le_bytes(bytes[4..6].try_into().unwrap()))
+}
 
 pub const KIND_TX_START: u8 = 0;
 pub const KIND_TX_END: u8 = 1;
@@ -304,6 +330,292 @@ pub fn parse_stream(
             }
             _ => {
                 // Resync: scan forward for the next plausible sync byte.
+                let mut skip = 1;
+                while pos + skip < bytes.len() && bytes[pos + skip] != SYNC {
+                    skip += 1;
+                }
+                report.capture_gaps += skip;
+                pos += skip;
+            }
+        }
+    }
+
+    Ok((header, events, report))
+}
+
+// ---------------------------------------------------------------------------
+// IPC record shape (CONTRACT_IPC_V0_1)
+// ---------------------------------------------------------------------------
+//
+// IPC is datagram-granularity, not byte-granularity (see stablehal-ipc's
+// crate doc comment on why): a correlation id is a `u32`, a length is a
+// `u32`, and there is no baud/framing concept, so the RTU header/record
+// shapes above do not fit. The `contract` field in a 16-byte header is what
+// lets a reader tell which record shape follows; this is a second shape
+// sharing that one selector, not a second format.
+
+pub const IPC_HEADER_LEN: usize = HEADER_LEN;
+pub const RECORD_IPC_LEN: usize = 20;
+
+pub const IPC_KIND_SENT: u8 = 0;
+pub const IPC_KIND_DELIVERED: u8 = 1;
+pub const IPC_KIND_RESPONDED: u8 = 2;
+pub const IPC_KIND_RESPONSE_DELIVERED: u8 = 3;
+pub const IPC_KIND_SEND_REJECTED: u8 = 4;
+pub const IPC_KIND_SILENT_DROP: u8 = 5;
+pub const IPC_KIND_FAULT: u8 = 6;
+pub const IPC_KIND_PEER_EXIT: u8 = 7;
+pub const IPC_KIND_END_OF_OBSERVATION: u8 = 0xFF;
+
+/// `IpcFault` discriminant, pinned to a fixed byte value independent of
+/// declaration order in `stablehal-ipc` so the wire format can't silently
+/// drift if that enum is reordered.
+fn ipc_fault_to_discriminant(f: IpcFault) -> u8 {
+    match f {
+        IpcFault::PeerGone => 0,
+        IpcFault::WouldBlock => 1,
+        IpcFault::Truncated => 2,
+        IpcFault::Duplicate => 3,
+        IpcFault::Reordered => 4,
+    }
+}
+
+fn discriminant_to_ipc_fault(d: u8) -> Option<IpcFault> {
+    match d {
+        0 => Some(IpcFault::PeerGone),
+        1 => Some(IpcFault::WouldBlock),
+        2 => Some(IpcFault::Truncated),
+        3 => Some(IpcFault::Duplicate),
+        4 => Some(IpcFault::Reordered),
+        _ => None,
+    }
+}
+
+/// IPC capture header: reuses the RTU header's 16-byte layout and `magic`/
+/// `contract`/`flags` fields, but the trailing bytes that were `baud`/
+/// `uart_cfg`/reserved for RTU carry no meaning for IPC beyond `flags` —
+/// they are reserved (zero) here.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct IpcHeader {
+    pub contract: u16,
+    pub flags: u16,
+}
+
+impl IpcHeader {
+    pub fn encode(&self) -> [u8; IPC_HEADER_LEN] {
+        let mut buf = [0u8; IPC_HEADER_LEN];
+        buf[0..4].copy_from_slice(&MAGIC.to_le_bytes());
+        buf[4..6].copy_from_slice(&self.contract.to_le_bytes());
+        buf[6..8].copy_from_slice(&self.flags.to_le_bytes());
+        // buf[8..16] reserved = 0
+        buf
+    }
+
+    pub fn decode(buf: &[u8]) -> Result<Self, ShcError> {
+        if buf.len() < IPC_HEADER_LEN {
+            return Err(ShcError::Truncated);
+        }
+        let magic = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+        if magic != MAGIC {
+            return Err(ShcError::BadMagic);
+        }
+        let contract = u16::from_le_bytes(buf[4..6].try_into().unwrap());
+        let flags = u16::from_le_bytes(buf[6..8].try_into().unwrap());
+        Ok(IpcHeader { contract, flags })
+    }
+}
+
+/// One IPC capture record, 20 bytes: `sync | kind | fault | reserved | id:u32
+/// | len:u32 | t_ns:u64`. `id`/`len` are `0` for kinds that carry no
+/// correlation id or length (`Fault`, `PeerExit`, `EndOfObservation`);
+/// `fault` is meaningful only for `Fault`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct IpcRecord {
+    pub kind: u8,
+    pub fault: u8,
+    pub id: u32,
+    pub len: u32,
+    pub t_ns: u64,
+}
+
+impl IpcRecord {
+    pub fn encode(&self) -> [u8; RECORD_IPC_LEN] {
+        let mut buf = [0u8; RECORD_IPC_LEN];
+        buf[0] = SYNC;
+        buf[1] = self.kind;
+        buf[2] = self.fault;
+        // buf[3] reserved = 0
+        buf[4..8].copy_from_slice(&self.id.to_le_bytes());
+        buf[8..12].copy_from_slice(&self.len.to_le_bytes());
+        buf[12..20].copy_from_slice(&self.t_ns.to_le_bytes());
+        buf
+    }
+
+    fn decode(buf: &[u8]) -> Option<Self> {
+        if buf.len() < RECORD_IPC_LEN || buf[0] != SYNC {
+            return None;
+        }
+        let kind = buf[1];
+        let known_kind = kind <= IPC_KIND_PEER_EXIT || kind == IPC_KIND_END_OF_OBSERVATION;
+        if !known_kind {
+            return None;
+        }
+        let id = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+        let len = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        let t_ns = u64::from_le_bytes(buf[12..20].try_into().unwrap());
+        Some(IpcRecord {
+            kind,
+            fault: buf[2],
+            id,
+            len,
+            t_ns,
+        })
+    }
+}
+
+/// Serialize a captured/simulated `IpcEvent` trace into an SHC1-IPC byte
+/// stream.
+pub fn write_stream_ipc(header: &IpcHeader, trace: &[TraceEvent<IpcEvent>]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(IPC_HEADER_LEN + trace.len() * RECORD_IPC_LEN);
+    out.extend_from_slice(&header.encode());
+    for ev in trace {
+        let t_ns = ev.at.as_nanos();
+        let record = match ev.event {
+            IpcEvent::Sent { id, len } => IpcRecord {
+                kind: IPC_KIND_SENT,
+                fault: 0,
+                id,
+                len,
+                t_ns,
+            },
+            IpcEvent::Delivered { id } => IpcRecord {
+                kind: IPC_KIND_DELIVERED,
+                fault: 0,
+                id,
+                len: 0,
+                t_ns,
+            },
+            IpcEvent::Responded { id, len } => IpcRecord {
+                kind: IPC_KIND_RESPONDED,
+                fault: 0,
+                id,
+                len,
+                t_ns,
+            },
+            IpcEvent::ResponseDelivered { id } => IpcRecord {
+                kind: IPC_KIND_RESPONSE_DELIVERED,
+                fault: 0,
+                id,
+                len: 0,
+                t_ns,
+            },
+            IpcEvent::SendRejected { id } => IpcRecord {
+                kind: IPC_KIND_SEND_REJECTED,
+                fault: 0,
+                id,
+                len: 0,
+                t_ns,
+            },
+            IpcEvent::SilentDrop { id } => IpcRecord {
+                kind: IPC_KIND_SILENT_DROP,
+                fault: 0,
+                id,
+                len: 0,
+                t_ns,
+            },
+            IpcEvent::Fault { fault } => IpcRecord {
+                kind: IPC_KIND_FAULT,
+                fault: ipc_fault_to_discriminant(fault),
+                id: 0,
+                len: 0,
+                t_ns,
+            },
+            IpcEvent::PeerExit => IpcRecord {
+                kind: IPC_KIND_PEER_EXIT,
+                fault: 0,
+                id: 0,
+                len: 0,
+                t_ns,
+            },
+            IpcEvent::EndOfObservation => IpcRecord {
+                kind: IPC_KIND_END_OF_OBSERVATION,
+                fault: 0,
+                id: 0,
+                len: 0,
+                t_ns,
+            },
+        };
+        out.extend_from_slice(&record.encode());
+    }
+    out
+}
+
+/// Append an `EndOfObservation` IPC record at `t_ns`.
+pub fn append_end_of_observation_ipc(out: &mut Vec<u8>, t_ns: u64) {
+    out.extend_from_slice(
+        &IpcRecord {
+            kind: IPC_KIND_END_OF_OBSERVATION,
+            fault: 0,
+            id: 0,
+            len: 0,
+            t_ns,
+        }
+        .encode(),
+    );
+}
+
+/// Parse an SHC1-IPC stream into `(header, IpcEvent trace, report)`, with
+/// the same resync-on-corruption behavior as [`parse_stream`]: on a corrupt
+/// record, scan forward to the next `0xA5` whose record passes the resync
+/// predicate (valid kind, monotonic `t_ns`), counting skipped bytes into
+/// `capture_gaps`.
+pub fn parse_stream_ipc(
+    bytes: &[u8],
+) -> Result<(IpcHeader, Vec<TraceEvent<IpcEvent>>, ParseReport), ShcError> {
+    let header = IpcHeader::decode(bytes)?;
+    let mut events = Vec::new();
+    let mut report = ParseReport::default();
+    let mut pos = IPC_HEADER_LEN;
+    let mut last_t: u64 = 0;
+
+    while pos < bytes.len() {
+        match IpcRecord::decode(&bytes[pos..]) {
+            Some(rec) if rec.t_ns >= last_t => {
+                last_t = rec.t_ns;
+                report.records += 1;
+                let at = Nanos::from_nanos(rec.t_ns);
+                let id: CorrelationId = rec.id;
+                let event = match rec.kind {
+                    IPC_KIND_SENT => IpcEvent::Sent { id, len: rec.len },
+                    IPC_KIND_DELIVERED => IpcEvent::Delivered { id },
+                    IPC_KIND_RESPONDED => IpcEvent::Responded { id, len: rec.len },
+                    IPC_KIND_RESPONSE_DELIVERED => IpcEvent::ResponseDelivered { id },
+                    IPC_KIND_SEND_REJECTED => IpcEvent::SendRejected { id },
+                    IPC_KIND_SILENT_DROP => IpcEvent::SilentDrop { id },
+                    IPC_KIND_FAULT => {
+                        let Some(fault) = discriminant_to_ipc_fault(rec.fault) else {
+                            // An unrecognized fault discriminant is exactly
+                            // the kind of corruption resync exists to
+                            // recover from — treat it the same as a decode
+                            // failure rather than fabricating a fault.
+                            let mut skip = 1;
+                            while pos + skip < bytes.len() && bytes[pos + skip] != SYNC {
+                                skip += 1;
+                            }
+                            report.capture_gaps += skip;
+                            pos += skip;
+                            continue;
+                        };
+                        IpcEvent::Fault { fault }
+                    }
+                    IPC_KIND_PEER_EXIT => IpcEvent::PeerExit,
+                    IPC_KIND_END_OF_OBSERVATION => IpcEvent::EndOfObservation,
+                    _ => unreachable!("IpcRecord::decode filters kind"),
+                };
+                events.push(TraceEvent { at, event });
+                pos += RECORD_IPC_LEN;
+            }
+            _ => {
                 let mut skip = 1;
                 while pos + skip < bytes.len() && bytes[pos + skip] != SYNC {
                     skip += 1;

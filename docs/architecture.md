@@ -26,7 +26,7 @@ StableHAL's requirement set:
 | R3 | The **same oracle** judges simulated traces and hardware captures (`no_std`), closing the SW↔HW loop. |
 | R4 | A **conformance suite** is derived from the contract and can run against simulated and real devices alike. |
 | R5 | Every failure **replays byte-for-byte from its seed**. |
-| R6 | Pilot protocols: MODBUS RTU over UART (FC 03/06/10 subset, unicast) — full closed loop, incl. conformance suite and (simulation-validated) hardware capture path; I2C, LIN, SPI, and CAN — full closed loop, contract + reference driver/device + simulator world + DST-verified conformance suite; IPC (request/response datagrams over a bounded queue) — full closed loop in simulation, the first non-wire domain (§5.7). |
+| R6 | Pilot protocols: MODBUS RTU over UART (FC 03/06/10 subset, unicast) — full closed loop, incl. conformance suite and (simulation-validated) hardware capture path; I2C, LIN, SPI, and CAN — full closed loop, contract + reference driver/device + simulator world + DST-verified conformance suite; IPC (request/response datagrams over a bounded queue) — full closed loop in simulation **and** a real local `AF_UNIX` capture path (§5.7), the first non-wire domain. |
 
 ### 1.2 Quality goals (top 3)
 
@@ -507,6 +507,8 @@ bound), so there is no hull to contain (see §11).
 | `requester` | [requester.rs](../crates/stablehal-ipc/src/requester.rs) | `ScriptedRequester`: the only reference driver in the workspace that must handle **backpressure** (retry-then-give-up, bounded). |
 | `device` | [device.rs](../crates/stablehal-ipc/src/device.rs) | `IpcResponderDevice` + a 6-entry `IpcResponderBugs` catalog, each mapping to exactly one clause. |
 | world | [ipc.rs](../crates/stablehal-sim/src/ipc.rs) | `IpcWorld`: bounded queue, seeded scheduler-latency draws, seeded peer-death injection. |
+| capture format | [stablehal-shc1](../crates/stablehal-shc1/src/lib.rs) | `IpcHeader`/`IpcRecord` (datagram granularity, contract code 0x0004), sharing SHC1's SYNC-byte resync-on-corruption scheme with the RTU record shape via the header's `contract` selector. |
+| capture port | [ipc-capture-shim](../tools/ipc-capture-shim/src/lib.rs) | `RealSocketRequester`/`RealSocketResponder`: real `AF_UNIX` transport implementing `IpcRequester`/`IpcResponder`, so the unmodified reference driver/device can be pointed at a real socket. Closes the pilot's capture gap (§11 T12). |
 
 **Why this belongs in a HAL-contract project.** The five prior pilots are
 wire buses: physical media, crystal-derived timing, electrical
@@ -554,6 +556,21 @@ production runs?" is a genuinely open question. `sim_envelope_sweep(n)` folds
 n seeds into the comparison region, and `tests/ipc_envelope.rs` proves a
 still-conforming production hull outside the swept region is correctly
 reported *uncontained*.
+
+**Real-socket capture (T12, closed 2026-09-14).** `IpcContract` was always
+`no_std` and judges any trace regardless of origin, but until now nothing
+produced one from a real running process pair — the software analogue of
+`targets/rp2040`'s hardware-capture gap, minus the hardware. A capture
+format (SHC1's second record shape, contract code 0x0004) plus a real-socket
+`IpcRequester`/`IpcResponder` port (`tools/ipc-capture-shim`) close that:
+`tests/ipc_containment_from_capture.rs` runs the unmodified reference
+driver/device over a real `AF_UNIX` socket, certifies the capture
+CONFORMING, and compares its measured `IPC-DELIVERY` hull against
+`sim_envelope_sweep` — correctly reported *uncovered*, since a real kernel
+round trip between two OS processes costs more than an in-memory queue ever
+could. That is the concrete payoff containment exists for: CI's simulated
+envelope and a real socket's actual one are no longer two separate,
+unverified claims.
 
 Full walkthrough, clause table, and limits: `docs/user-guide-ipc.md`.
 
@@ -809,6 +826,7 @@ seed and is reproducible; honest driver failures (retries exhausted) are
 | T9 | `targets/rp2040/` firmware (T7 hardware phase) is drafted but **unverified**: never compiled (no `thumbv6m-none-eabi` installed), never flashed, `rp2040-hal` API calls written from memory. | See `targets/rp2040/README.md` "Status" for the itemized gap list; fix on first real build once hardware is available. |
 | T10 | ~~`stablehal-lin` has a closed-loop DST test but no `stablehal_conformance::lin` case suite yet (unlike MODBUS/I2C).~~ **Closed 2026-07-11.** | Resolved: `stablehal_conformance::lin` added (`mod.rs` + `runner.rs`), 4-case `STANDARD_SUITE`, `tests/lin_closed_loop.rs`; see `ChangeLog.txt` 2026-07-11 entry and §5.1. |
 | T11 | ~~Envelope containment (§5.6, ADR-11) is piloted on `modbus-rtu` timing clauses only; I2C/LIN/SPI/CAN contracts still use the `step_measured` trait default (empty hull) — containment cannot be claimed for them yet.~~ **Closed for every applicable protocol** (I2C/LIN 2026-07-11 as T11; SPI as T12). CAN has no timing-envelope clause, so containment does not apply to it (documented, not deferred). Containment is min/max only, not a statistical/percentile guarantee — that scope limit remains. | Resolved: `I2cContract`/`LinContract`/`SpiContract` implement `step_measured` mirroring `RtuContract`; `sim_envelope` added to `stablehal_conformance::{i2c,lin,spi}::runner`; `tests/i2c_envelope.rs`/`tests/lin_envelope.rs`/`tests/spi_envelope.rs`. See `ChangeLog.txt` and §5.1/§9 (ADR-11). Document the min/max-only scope in any external certificate language rather than overstating it as a probabilistic bound. |
+| T12 | ~~The IPC pilot (§5.7) is closed-loop **in simulation only**: `IpcContract` judges any trace, but no capture format or capture-producing tool exists for a real socket — the software analogue of `targets/rp2040` (T9)'s "specified, not demonstrated" gap.~~ **Closed 2026-09-14.** | Resolved: `stablehal-shc1` gained a second record shape for IPC (contract code 0x0004, §13.3), and `tools/ipc-capture-shim` provides a real-`AF_UNIX`-socket `IpcRequester`/`IpcResponder` implementation the unmodified reference driver/device can run against with no code of their own aware of the difference — no interposer, no `unsafe`. `stablehal-certify` gained `merge-ipc` and IPC dispatch in `judge`/`measure`/`sim-envelope`. `tests/ipc_containment_from_capture.rs` proves the acceptance bar: a real capture's `IPC-DELIVERY` hull compared against `sim_envelope_sweep` via `contain` is correctly reported uncovered — sim's in-memory-queue delivery latency is genuinely tighter than a real kernel round trip. Remaining scope: one host, one requester, one responder; cross-host capture and multi-requester fan-in are still simulation-only, same as `ChannelKind::CrossHost`'s standing limits. See `ChangeLog.txt` 2026-09-14 entry and `docs/user-guide-ipc.md` §9–§10. |
 
 ---
 
@@ -878,10 +896,12 @@ review blocker; a change that legitimately alters a golden value must say so in
 | lin | 0.1 | 9 | unassigned | yes |
 | spi | — | 7 | unassigned | yes |
 | can | — | 9 | unassigned | yes |
-| ipc | — | 9 | unassigned | yes |
+| ipc | 0.1 | 9 | 0x0004 | yes |
 
 The ultimate source of truth is the `Clause` registry inside each protocol
 crate (`clauses()`); this table is the single documentation index for it (§5.1
-points here rather than repeating the table). Certificate codes: only
-`modbus-rtu` (0x0001) is wired into `stablehal-certify` today; the others are
-reserved/unassigned. See §5.1 for the per-clause id lists and citations.
+points here rather than repeating the table). Certificate codes: `modbus-rtu`
+(0x0001) and `ipc` (0x0004) are wired into `stablehal-certify` today; the
+others are reserved/unassigned. `ipc`'s code deliberately skips ahead of
+`lin`/`spi`/`can` — precedented by `i2c`'s own out-of-pilot-order reservation
+of 0x0003. See §5.1 for the per-clause id lists and citations.

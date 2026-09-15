@@ -48,6 +48,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9007da9cacbd3e6343da136e98b0d2df013f553d35bdec8b518f07bea768e19c"
 
 [[package]]
+name = "ipc-capture-shim"
+version = "0.1.0"
+dependencies = [
+ "stablehal-contract",
+ "stablehal-ipc",
+ "stablehal-shc1",
+]
+
+[[package]]
 name = "modbus-master"
 version = "0.1.0"
 dependencies = [
@@ -115,6 +124,7 @@ version = "0.1.0"
 dependencies = [
  "stablehal-conformance",
  "stablehal-contract",
+ "stablehal-ipc",
  "stablehal-modbus",
  "stablehal-shc1",
  "stablehal-sim",
@@ -189,6 +199,7 @@ version = "0.1.0"
 dependencies = [
  "stablehal-conformance",
  "stablehal-contract",
+ "stablehal-ipc",
  "stablehal-modbus",
  "stablehal-sim",
  "stablehal-uart",

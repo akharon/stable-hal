@@ -203,6 +203,30 @@ impl IpcConfig {
             queue_depth: 8,
         }
     }
+
+    /// A local profile calibrated for a **real** two-process exchange over
+    /// an actual `AF_UNIX` socket, rather than `local_non_realtime`'s
+    /// in-sim-queue timing. `local_non_realtime`'s `200ns..=5µs` delivery
+    /// bound describes how fast an in-memory queue can move a datagram
+    /// between two halves of one simulated world; a real kernel round trip
+    /// between two separate OS processes routinely costs tens of
+    /// microseconds even with no scheduling stall at all, so judging a real
+    /// capture against the sim-calibrated bound would flag ordinary,
+    /// correct behavior as a breach. This profile widens `delivery` to
+    /// admit that real cost while keeping `resp_time` identical to
+    /// `local_non_realtime` — the scheduling-latency envelope this pilot
+    /// cares most about is unaffected by which profile measured the wire
+    /// itself. Used as the default profile for `stablehal-certify
+    /// judge`/`measure` on real captures (see `docs/user-guide-ipc.md`).
+    pub const fn real_socket_local() -> Self {
+        IpcConfig {
+            kind: ChannelKind::LocalQueue,
+            delivery: TimeBound::new(Nanos::from_nanos(200), Nanos::from_micros(500)),
+            resp_time: TimeBound::new(Nanos::from_micros(10), Nanos::from_millis(20)),
+            max_msg_len: 4096,
+            queue_depth: 8,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

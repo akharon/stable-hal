@@ -16,6 +16,7 @@ stablehal-modbus = { workspace = true }
 stablehal-uart = { workspace = true }
 stablehal-shc1 = { workspace = true }
 stablehal-conformance = { workspace = true }
+stablehal-ipc = { workspace = true }
 
 [dev-dependencies]
 stablehal-sim = { workspace = true }

@@ -245,18 +245,20 @@ the suite rotting into a no-op, and it is itself tested
 
 ## 9. Known limits
 
-* **No hardware-certification path yet.** There is no SHC1 capture format for
-  IPC and no `stablehal-certify` contract code assigned. Judging a real
-  socket would need a capture shim (an `LD_PRELOAD` interposer or an eBPF
-  probe on `sendmsg`/`recvmsg`) that emits `IpcEvent`s with timestamps. The
-  oracle is ready for it — it is `no_std` and judges any trace — but the
-  capture side does not exist. Until it does, the IPC pilot's claim is
-  "closed loop in simulation", the same status the wire pilots have on real
-  hardware.
+* **Hardware/software-certification path exists, but is local-host-only.**
+  §10 covers the real-`AF_UNIX`-socket capture path. It handles exactly one
+  requester process and one responder process on one host — cross-host
+  capture (which `ChannelKind::CrossHost` models as a contract profile) has
+  no capture-side implementation, and neither does multi-requester fan-in.
+* **`SilentDrop` is never emitted live** by the real-socket capture port,
+  the same honest limit the reference *simulated* world has: a silently
+  dropped datagram can only be inferred by absence (an unanswered
+  transaction at `EndOfObservation`), never observed directly, because
+  nothing exists to observe. Declared, not silently worked around.
 * **Single requester, single responder.** No fan-in from multiple client
   processes, and no shared-queue contention between them. The contract's
-  per-correlation-id state would extend to it, but the reference world does
-  not model it.
+  per-correlation-id state would extend to it, but neither the reference
+  world nor the real-socket capture port model it.
 * **`MAX_TRACKED = 16`** concurrent correlation ids in the contract state.
   Exceeding it is reported as `IPC-SEQ` rather than silently forgotten.
 * **Containment is min/max only**, not a percentile guarantee — the same
@@ -264,14 +266,127 @@ the suite rotting into a no-op, and it is itself tested
   envelope, where the distribution is heavily tailed, this limit matters more
   than it does for a wire bus: a hull says where the extremes were, not how
   often.
-* `Truncated` is in the fault vocabulary but the reference world never
-  injects it (no partial-datagram path exists in the model). Declared, not
-  silently dropped — the same honesty pattern as `SPI-DATA-VALID` and
-  `CAN-BIT-STUFFING`.
+* `Truncated` is in the fault vocabulary but neither the reference world nor
+  the real-socket capture port ever inject it (no partial-datagram path
+  exists in either model). Declared, not silently dropped — the same
+  honesty pattern as `SPI-DATA-VALID` and `CAN-BIT-STUFFING`.
 
 ---
 
-## 10. Where the code lives
+## 10. Capturing a real Unix-socket service
+
+`IpcContract` was always `no_std` and judges any `IpcEvent` trace regardless
+of its origin — but until this section's contents existed, nothing produced
+one from a real running process pair, so no real IPC service could ever be
+certified. This closes that gap for the simplest, most common case: one
+requester process and one responder process on one host, talking over a real
+`AF_UNIX SOCK_DGRAM` socket.
+
+### 10.1 Why a real-socket port, not an interposer
+
+The obvious approach — an `LD_PRELOAD` interposer hooking `sendmsg`/
+`recvmsg` via `dlsym`/`RTLD_NEXT` — was the original plan, since it can
+capture *any* existing service without touching its source. But
+`stablehal-ipc`'s reference driver (`ScriptedRequester`) and reference
+device (`IpcResponderDevice`) are already written purely against the
+`IpcRequester`/`IpcResponder` traits: they have no idea whether the port
+underneath is `stablehal_sim`'s in-memory queue or a real socket. That makes
+a much simpler design possible: implement those same traits over a real
+socket (`tools/ipc-capture-shim`'s `RealSocketRequester`/
+`RealSocketResponder`), and point the *unmodified* reference driver/device
+at it. No `unsafe`, no libc FFI, no interposition — pure `std`. The
+trade-off is scope: this captures a service built against
+`stablehal-ipc`'s traits, not an arbitrary pre-existing binary. For this
+pilot's acceptance bar — proving the capture-to-certify loop closes at all
+— that trade was worth it.
+
+### 10.2 Wire framing
+
+`stablehal-ipc` has no wire encoding of its own (the simulated world passes
+`Datagram` structs in memory), so the real-socket port defines one: one
+`SOCK_DGRAM` datagram carries `id: u32 LE | len: u16 LE | payload: [u8;
+len]` (`len <= MAX_PAYLOAD`). `SOCK_DGRAM` preserves message boundaries, so
+nothing beyond this is needed.
+
+A responder's socket is *bound*, not *connected* — `AF_UNIX` datagram
+sockets have no accept step on the passive side — so it replies via
+`send_to` the address a request arrived from. That address is only usable if
+the requester **also bound** its own socket before connecting: an
+unbound client has no addressable identity, and a responder's `send_to`
+against an unnamed peer fails with `EINVAL`. Both fixture binaries
+(`ipc-requester-fixture`, `ipc-responder-fixture` in
+`tools/ipc-capture-shim/src/bin/`) do this correctly; a hand-written client
+must too.
+
+### 10.3 Shared capture origin
+
+Both sides must timestamp against the **same** origin for a merge to
+produce a sensible time order. `std::time::Instant` cannot serve this role
+even though it is backed by `CLOCK_MONOTONIC` on Linux: safe `std` gives no
+way to read its raw value or share it between processes, and one process's
+`Instant::now()` only orders against other `Instant`s in that same process.
+`Capture::new` therefore takes an explicit `SystemTime` origin, which
+whatever spawns both fixtures computes once (e.g. `SystemTime::now()` as
+nanoseconds since `UNIX_EPOCH`) and passes to both via the
+`IPC_CAPTURE_EPOCH_NS` environment variable. `SystemTime` can in principle
+jump on an NTP step, unlike `CLOCK_MONOTONIC` — accepted here in exchange
+for staying in safe `std`. This is also why the capture path is
+local-host-only: cross-host would need real clock-skew correction, which
+this design does not attempt.
+
+### 10.4 Walkthrough
+
+```sh
+export IPC_CAPTURE_EPOCH_NS=$(python3 -c 'import time; print(time.time_ns())')
+
+# Responder binds first.
+./target/debug/ipc-responder-fixture /tmp/ipc.sock responder.shcipc &
+sleep 0.3
+./target/debug/ipc-requester-fixture /tmp/ipc.sock requester.shcipc
+
+# Merge the two one-sided captures into one time-ordered trace.
+stablehal-certify merge-ipc requester.shcipc responder.shcipc --out merged.shcipc
+
+# Judge it — CONFORMING for a clean exchange.
+stablehal-certify judge merged.shcipc
+```
+
+`judge`/`measure` dispatch on the capture's own SHC1 header `contract`
+field (0x0004 for IPC, §13.3), the same file-format polymorphism the RTU
+path already had a slot for. `--profile` selects the `IpcConfig` to judge
+against; it defaults to `IpcConfig::real_socket_local()`, **not**
+`local_non_realtime()` — a real kernel round trip between two OS processes
+routinely costs tens of microseconds even with zero scheduling stall, past
+`local_non_realtime`'s in-sim-queue-calibrated `IPC-DELIVERY` bound
+(`200ns..=5µs`). Judging a real capture against that bound would flag
+ordinary, correct behavior as a breach; `real_socket_local` widens
+`IPC-DELIVERY` to `200ns..=500µs` while leaving `resp_time` unchanged, since
+the scheduling-latency envelope this pilot cares about doesn't depend on
+which profile measured the wire itself.
+
+### 10.5 The containment payoff
+
+The reason this pilot cares about a real capture at all is the same reason
+containment (§7) was built: does the simulated envelope actually cover
+where a real deployment runs?
+
+```sh
+stablehal-certify measure merged.shcipc --json hw_envelope.json
+stablehal-certify sim-envelope --protocol ipc --seeds 50 --json sim_envelope.json
+stablehal-certify contain --hw hw_envelope.json --sim sim_envelope.json
+```
+
+Run against a real capture, `IPC-DELIVERY` comes back **UNCOVERED**: a real
+kernel round trip between two OS processes is genuinely slower than
+anything an in-memory simulated queue can produce. That is not a bug in
+either side — it is exactly the fact containment exists to surface, and
+`tools/ipc-capture-shim/tests/ipc_containment_from_capture.rs` asserts it
+directly rather than leaving it to be discovered by whoever runs the
+commands above.
+
+---
+
+## 11. Where the code lives
 
 | Block | File |
 |---|---|
@@ -282,4 +397,8 @@ the suite rotting into a no-op, and it is itself tested
 | Simulator world | [ipc.rs](../crates/stablehal-sim/src/ipc.rs) |
 | Conformance suite | [ipc/mod.rs](../crates/stablehal-conformance/src/ipc/mod.rs) |
 | DST closed loop | [ipc_dst.rs](../crates/stablehal-sim/tests/ipc_dst.rs) |
-| Containment | [ipc_envelope.rs](../crates/stablehal-conformance/tests/ipc_envelope.rs) |
+| Containment (sim) | [ipc_envelope.rs](../crates/stablehal-conformance/tests/ipc_envelope.rs) |
+| Capture format (SHC1 IPC record shape) | [stablehal-shc1/src/lib.rs](../crates/stablehal-shc1/src/lib.rs) |
+| Real-socket capture port + fixtures | [tools/ipc-capture-shim](../tools/ipc-capture-shim/src/lib.rs) |
+| `stablehal-certify` IPC dispatch + `merge-ipc` | [judge.rs](../tools/stablehal-certify/src/judge.rs), [measure.rs](../tools/stablehal-certify/src/measure.rs), [merge_ipc.rs](../tools/stablehal-certify/src/merge_ipc.rs) |
+| Containment from a real capture | [ipc_containment_from_capture.rs](../tools/ipc-capture-shim/tests/ipc_containment_from_capture.rs) |

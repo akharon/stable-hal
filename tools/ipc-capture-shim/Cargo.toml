@@ -1,0 +1,24 @@
+[package]
+name = "ipc-capture-shim"
+description = "Real Unix-domain-socket transport implementing stablehal-ipc's IpcRequester/IpcResponder traits, capturing a timestamped IpcEvent trace as it runs (next_steps.md item 2: closing the IPC capture loop on a real socket)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "ipc_capture_shim"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ipc-requester-fixture"
+path = "src/bin/requester_fixture.rs"
+
+[[bin]]
+name = "ipc-responder-fixture"
+path = "src/bin/responder_fixture.rs"
+
+[dependencies]
+stablehal-contract = { workspace = true }
+stablehal-ipc = { workspace = true }
+stablehal-shc1 = { workspace = true }

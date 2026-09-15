@@ -4,6 +4,108 @@ Format: date — version — changes. Newest first.
 Semantics: "contract version" changes are called out explicitly, because they
 invalidate previously issued conformance certificates.
 
+2026-09-14 — 0.1.0 — IPC capture path: closing the loop on a real socket
+------------------------------------------------------------
+Rationale: T14 closed the IPC pilot's loop in simulation only (no capture
+format, no certify wiring) — the software analogue of the RP2040 hardware
+pilot's "specified but not demonstrated" gap, and next_steps.md's #2
+priority item since it needs no hardware, only a real Unix-domain-socket
+service. `IpcContract` was already `no_std` and judges any `IpcEvent`
+trace regardless of its source; nothing existed to produce one from a real
+running process pair.
+
+Added:
+  * `crates/stablehal-shc1`: a second SHC1 record shape for IPC, selected by
+    the existing 16-byte header's `contract` field (`CONTRACT_IPC_V0_1 =
+    0x0004` — assigned after i2c's reserved 0x0003, deliberately ahead of
+    lin/spi/can, which remain unassigned; precedented by i2c's own
+    out-of-pilot-order reservation). New `IpcHeader` (adds
+    `FLAG_IPC_RESPONDER_SIDE` to tell a merge's two input captures apart)
+    and 20-byte `IpcRecord` (`sync | kind | fault | reserved | id:u32 |
+    len:u32 | t_ns:u64`) carrying all 9 `IpcEvent` variants at datagram
+    granularity — the RTU record's byte/baud-shaped fields don't fit IPC's
+    events (a correlation id, not a wire byte). `write_stream_ipc` /
+    `parse_stream_ipc` share the RTU codec's SYNC-byte resync-on-corruption
+    scheme. New `peek_contract_code` lets a host tool read a stream's
+    `contract` field before committing to either record shape. New dep on
+    `stablehal-ipc` (for `IpcEvent`/`IpcFault`). Tests:
+    `tests/round_trip_ipc.rs` (6 cases: header round-trip, every event kind
+    and every `IpcFault` discriminant round-tripping through
+    write/parse, a conforming trace judged through the oracle after the
+    round trip, and resync-skips-corrupt-bytes-and-counts-gaps).
+  * `crates/stablehal-ipc`: new `IpcConfig::real_socket_local()` profile —
+    a real kernel round trip between two OS processes costs tens of
+    microseconds even with zero scheduling stall, well past
+    `local_non_realtime`'s in-sim-queue-calibrated `IPC-DELIVERY` bound
+    (200ns..=5us); judging a real capture against that bound would flag
+    ordinary correct behavior as a breach. `resp_time` is unchanged from
+    `local_non_realtime` — the scheduling-latency envelope this pilot cares
+    about doesn't depend on which profile measured the wire. This is the
+    default profile `stablehal-certify` uses for IPC captures.
+  * `tools/ipc-capture-shim` (new workspace member, plain lib + 2 fixture
+    bins, zero external deps): real-socket transport implementing
+    `IpcRequester`/`IpcResponder` over `AF_UNIX SOCK_DGRAM`
+    (`RealSocketRequester`, `RealSocketResponder`), so the *unmodified*
+    reference driver (`ScriptedRequester`) and reference responder
+    (`IpcResponderDevice`) can be pointed at a real channel with no code of
+    their own knowing the difference — no interposer, no `unsafe`, pure
+    `std`, a simpler design than next_steps.md's original LD_PRELOAD
+    suggestion once it was clear the reference driver/device were already
+    trait-generic. `Capture` records `IpcEvent`s against an explicit shared
+    `SystemTime` origin (both fixture processes read the same
+    `IPC_CAPTURE_EPOCH_NS` env var) rather than each side's own
+    `Instant::now()`, which has no cross-process meaning in safe `std` —
+    discovered when the first merge attempt produced an impossible
+    ordering (a response "delivered" before it was "sent"). A responder's
+    socket is bound, not connected (`AF_UNIX` datagram sockets have no
+    accept step), so replies go through `recv_from`/`send_to_addr` against
+    the request's return address, and the requester must bind its own
+    throwaway path before connecting or that address is unnamed and
+    `send_to_addr` fails with EINVAL — both discovered by testing against a
+    real socket, not by inspection. Fixture responder applies a 15us
+    `RESP_TIME_FLOOR` before answering: a tight busy-poll loop answers
+    faster (~7us) than `resp_time`'s 10us lower bound admits, which is a
+    fixture artifact (no real scheduled service is ever polled that
+    tightly) rather than a bound worth loosening.
+  * `tools/stablehal-certify`: `judge`/`measure` now peek the capture
+    header's `contract` field and dispatch to RTU or IPC judging
+    internally, with a new `--profile
+    {local-non-realtime|local-realtime|cross-host}` flag for IPC (defaults
+    to `real_socket_local`). New `merge-ipc <requester> <responder> --out
+    <merged>` subcommand (`merge_ipc` library module) folds one
+    requester-side and one responder-side capture into the single
+    time-ordered trace the oracle judges — both sides' timestamps share one
+    origin (see above), so no cross-host clock-skew correction is
+    attempted; this is a **local-host-only** merge by design. New
+    `sim-envelope --protocol {modbus-rtu|ipc}` folds
+    `stablehal_conformance::ipc::runner::sim_envelope_sweep` into the same
+    `Envelope` JSON format `contain` already reads — `contain` itself
+    needed no changes, since it was already protocol-agnostic. Tests:
+    `tests/ipc_capture_certify.rs` (3, in-process, no real socket — proves
+    the format/CLI plumbing fast and deterministically) plus 8 new
+    `merge_ipc` unit tests.
+  * `tools/ipc-capture-shim` tests: `tests/real_socket_capture.rs` (2 —
+    positive: a conforming real exchange over a real socket certified
+    CONFORMING; negative: an injected 25ms responder delay flagged as
+    IPC-RESP-TIME) and `tests/ipc_containment_from_capture.rs` (1 — the
+    acceptance-bar test: a real capture's measured `IPC-DELIVERY` hull
+    compared against `sim_envelope_sweep(50)` via `contain`, asserted
+    NOT-covered — proving the concrete payoff next_steps.md called out:
+    sim models an in-memory queue's delivery latency, which is genuinely
+    tighter than a real kernel round trip between two OS processes, and
+    containment says so honestly rather than the two claims being taken on
+    faith separately).
+  * `docs/user-guide-ipc.md` §9 (known limits narrowed to what's still
+    true: LD_PRELOAD is not how this closed, cross-host/multi-requester
+    capture is still out of scope) + new §10 "Capturing a real Unix-socket
+    service"; `docs/architecture.md` §13.3 (`ipc` row: `0.1 | 9 | 0x0004 |
+    yes`) and §5.7 (capture-path building blocks + the new containment
+    proof point).
+
+Contract versions introduced:
+  * None — no `IpcEvent`/clause change; `ipc` v0.1's certificate code
+    (0x0004) is a new registry entry, not a version bump.
+
 2026-08-12 — 0.1.0 — T14: IPC channel pilot — the first non-wire domain
 ------------------------------------------------------------
 Rationale: IPC between two real-time-scheduled processes on one host has

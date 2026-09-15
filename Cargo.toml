@@ -19,13 +19,14 @@ members = [
     "examples/hello-sim",
     "adapters/rmodbus-slave",
     "tools/stablehal-certify",
+    "tools/ipc-capture-shim",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
 repository = "https://github.com/mkyr/StableHAL"
 
 [workspace.dependencies]
